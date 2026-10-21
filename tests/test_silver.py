@@ -77,3 +77,13 @@ def test_malformed_json_line_is_quarantined():
     rows = bronze.parse_jsonl('{"broken": \n' + json.dumps(_rec()), "f.jsonl")
     out, q, metrics = silver.transform(rows, "s")
     assert len(out) == 1 and metrics["rejected_by_reason"]["malformed_json"] == 1
+
+
+def test_silver_has_explicit_types_even_for_empty_columns():
+    # El simulador no trae card_status ni ip_country: quedan 100 % vacías, pero deben tener tipo
+    # (sin tipo, awswrangler no puede registrar la tabla en el Glue Data Catalog)
+    out, _, _ = silver.transform([_rec()], "s")
+    assert out["card_status"].isna().all() and str(out["card_status"].dtype) == "string"
+    assert str(out["ip_country"].dtype) == "string"
+    assert str(out["fraud_confirmed"].dtype) == "boolean"
+    assert not [c for c in out.columns if out[c].dtype == object], "ninguna columna puede quedar como object"

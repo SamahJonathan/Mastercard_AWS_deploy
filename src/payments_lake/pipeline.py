@@ -125,7 +125,7 @@ def bronze_to_silver(ref_date: date | None = None, settings: Settings | None = N
 
     non_empty = [q for q in quarantines if not q.empty]
     if non_empty:
-        quarantine = pd.concat(non_empty, ignore_index=True).astype("object").assign(ingest_date=ref_date.isoformat())
+        quarantine = pd.concat(non_empty, ignore_index=True).astype("string").assign(ingest_date=ref_date.isoformat())
         storage.write_parquet(quarantine, f"{st.silver_root}/quarantine", ["ingest_date"], st.glue_db_silver, "quarantine")
 
     # Dimensiones de referencia (pequeñas, se reescriben completas)

@@ -116,6 +116,10 @@ def write_parquet(
     """Escritura idempotente: reemplaza sólo las particiones presentes en df (o toda la tabla si no hay particiones)."""
     if df.empty:
         return
+    # Red de seguridad: una columna object sin ningún valor no tiene tipo inferible para el Glue Data Catalog
+    empty_objects = [c for c in df.columns if df[c].dtype == object and df[c].isna().all()]
+    if empty_objects:
+        df = df.astype({c: "string" for c in empty_objects})
     if _is_s3(table_path):
         import awswrangler as wr
 

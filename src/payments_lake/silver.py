@@ -28,6 +28,15 @@ SILVER_COLUMNS = [
     "source_system", "_batch_id", "_ingest_ts", "_source_file",
 ]
 OPTIONAL_BOOL = ["is_wallet", "is_3ds_authenticated", "fraud_confirmed", "chargeback"]
+# Tipo explícito de cada columna: si una fuente no trae un campo (p.ej. card_status en el simulador) la
+# columna queda 100 % vacía, y sin tipo declarado el catálogo de Glue no puede registrarla.
+SILVER_TYPES = {
+    **{c: "string" for c in SILVER_COLUMNS},
+    "event_ts": "datetime64[ns]",
+    "amount": "float64", "fx_rate_usd": "float64", "amount_usd": "float64",
+    "is_card_present": "bool", "is_cross_border": "bool", "is_approved": "bool",
+    **{c: "boolean" for c in OPTIONAL_BOOL},
+}
 QUARANTINE_COLUMNS = ["transaction_id", "reject_reasons", "raw_payload", "source_system", "_source_file", "_ingest_ts"]
 
 
@@ -45,12 +54,12 @@ def _split(df: pd.DataFrame, rules: dict[str, pd.Series], metrics: dict) -> tupl
     bad = df[rejected]
     quarantine = pd.DataFrame(
         {
-            "transaction_id": bad["transaction_id"].astype("object"),
+            "transaction_id": bad["transaction_id"].astype("string"),
             "reject_reasons": join_flags(checks[rejected]),
             "raw_payload": bad["_raw"].map(mask_pans),  # nunca PAN en claro fuera de Bronze
             "source_system": bad["source_system"],
             "_source_file": bad["_source_file"],
-            "_ingest_ts": bad["_ingest_ts"].astype("object"),
+            "_ingest_ts": bad["_ingest_ts"].astype("string"),
         }
     )
     metrics["rejected_records"] = int(rejected.sum())
@@ -70,11 +79,7 @@ def _finalize(ok: pd.DataFrame, metrics: dict) -> pd.DataFrame:
     for col in SILVER_COLUMNS:
         if col not in ok.columns:
             ok[col] = None
-    for col in OPTIONAL_BOOL:
-        ok[col] = ok[col].astype("boolean")
-    for col in ["card_status", "ip_country"]:
-        ok[col] = ok[col].astype("object")
-    silver = ok[SILVER_COLUMNS].reset_index(drop=True)
+    silver = ok[SILVER_COLUMNS].astype(SILVER_TYPES).reset_index(drop=True)
     metrics["silver_records"] = len(silver)
     metrics["approval_rate"] = round(float(np.mean(silver["is_approved"])) if len(silver) else 0.0, 4)
     return silver
@@ -207,7 +212,7 @@ def reconcile_core_snapshot(snapshot: dict, silver_core: pd.DataFrame) -> pd.Dat
         ok = rep is not None and abs(diff) <= max(0.01, abs(rep) * 0.0005)
         rows.append({"metric": metric, "reported": rep, "computed": value, "diff": diff,
                      "status": "OK" if ok else ("MISSING" if rep is None else "MISMATCH")})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).astype({"reported": "float64", "computed": "float64", "diff": "float64"})
 
 
 # --- Réplica DMS -> mismo formato que el extracto --------------------------------------------

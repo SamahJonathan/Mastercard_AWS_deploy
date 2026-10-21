@@ -135,7 +135,7 @@ def fraud_rule_performance(silver: pd.DataFrame, alerts: pd.DataFrame) -> pd.Dat
             "precision": round(tp / len(flagged), 4) if flagged else None,
             "recall": round(tp / len(frauds), 4) if frauds else None,
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).astype({"precision": "float64", "recall": "float64"})
 
 
 def cross_border_corridors(silver: pd.DataFrame) -> pd.DataFrame:
