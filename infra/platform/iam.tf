@@ -169,7 +169,8 @@ locals {
 
   # Consulta con Athena. Qué tablas ve cada analista lo decide Lake Formation (lakeformation.tf)
   analyst_keys = [
-    { Sid = "Athena", Effect = "Allow", Action = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults", "athena:StopQueryExecution", "athena:GetWorkGroup", "athena:ListNamedQueries", "athena:GetNamedQuery"], Resource = [aws_athena_workgroup.analytics.arn] },
+    { Sid = "Athena", Effect = "Allow", Action = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults", "athena:StopQueryExecution", "athena:GetWorkGroup", "athena:ListNamedQueries", "athena:GetNamedQuery", "athena:GetQueryResultsStream"], Resource = [aws_athena_workgroup.analytics.arn] },
+    # GetQueryResultsStream: lo exige el driver ODBC/JDBC (Power BI) para traer resultados por streaming (puerto 444)
     { Sid = "CatalogRead", Effect = "Allow", Action = ["glue:GetDatabase", "glue:GetDatabases", "glue:GetTable", "glue:GetTables", "glue:GetPartition", "glue:GetPartitions"], Resource = [local.glue_catalog, local.glue_db_arn["silver"], local.glue_tables["silver"], local.glue_db_arn["gold"], local.glue_tables["gold"]] },
     # Sin s3:GetObject sobre Silver/Gold: Lake Formation entrega credenciales temporales por tabla concedida
     { Sid = "LakeFormationVendedCredentials", Effect = "Allow", Action = ["lakeformation:GetDataAccess"], Resource = ["*"] },
