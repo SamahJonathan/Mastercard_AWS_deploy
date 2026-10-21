@@ -30,6 +30,12 @@ if ! command -v terraform >/dev/null; then
 fi
 terraform version -json | grep -o '"terraform_version":"[^"]*"' || true
 
+# CloudShell sólo da 1 GB persistente en $HOME y el provider de AWS pesa ~800 MB descomprimido.
+# Los plugins van a /tmp (disco temporal más grande); el terraform.tfstate sigue en $HOME y persiste.
+export TF_DATA_DIR="/tmp/paylake-tf-account"
+rm -rf "$ROOT/infra/account/.terraform"   # restos de un intento anterior en $HOME
+echo "==> Espacio disponible: $(df -h /tmp | awk 'NR==2 {print $4}') en /tmp, $(df -h "$HOME" | awk 'NR==2 {print $4}') en \$HOME"
+
 echo "==> Terraform: grupo paylake-admins + usuario $USER_NAME"
 terraform -chdir="$ROOT/infra/account" init -input=false
 terraform -chdir="$ROOT/infra/account" apply -var="admin_users=[\"$USER_NAME\"]"
