@@ -11,6 +11,11 @@ param(
     [string]$PandasLayerVersion = "3.16.1",
     [string]$GithubRepo = "SamahJonathan/Mastercard_AWS_deploy"
 )
+# Terraform y Python escriben UTF-8; si la consola usa la página de códigos de Windows (CP850), al pasar
+# su salida por PowerShell (| Out-Host, para el log) los caracteres se corrompen: "─" se ve como "ÔöÇ".
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
 $results = [System.Collections.Generic.List[object]]::new()
 function Check([string]$item, [string]$status, [string]$todo) {
     $results.Add([pscustomobject]@{ Estado = $status; Chequeo = $item; QueHacer = $todo })

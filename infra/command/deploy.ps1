@@ -19,6 +19,11 @@ param(
     [switch]$SkipTests
 )
 $ErrorActionPreference = "Stop"
+# Terraform y Python escriben UTF-8; si la consola usa la página de códigos de Windows (CP850), al pasar
+# su salida por PowerShell (| Out-Host, para el log) los caracteres se corrompen: "─" se ve como "ÔöÇ".
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
 # Terminales abiertas antes de instalar el AWS CLI (p.ej. las de VS Code) no ven el PATH nuevo: se agrega
 # (sin reemplazar el actual, para no perder el .venv activado).
 $env:Path = $env:Path + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
