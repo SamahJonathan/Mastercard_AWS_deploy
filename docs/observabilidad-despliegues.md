@@ -70,9 +70,16 @@ del estado. Terraform sólo le cuelga lo que **lee** de él: el metric filter, l
 | `result` | `success`, `failed`, `cancelled`, `no_changes`, `planned` (con `-PlanOnly`) |
 | `source` | `local` (tu PC) o `github-actions` (con `run_url` al log de Actions) |
 | `failed_step` | el paso exacto donde se cortó, p.ej. `5/6 Plan` |
+| `error` | la causa. Si falló el pipeline, se saca del historial de Step Functions: `El pipeline terminó en FAILED en la etapa 'BronzeToSilver': TypeError: …` ([`scripts/sfn_failure_reason.py`](../scripts/sfn_failure_reason.py)) |
 
 **Correlación**: el `deployment_id` lleva fecha y commit (`<fecha>-<sha>`); con el SHA se cruzan el
 registro, el plan, el log de Actions y los eventos de CloudTrail.
+
+## Lección del primer despliegue
+
+Los primeros registros decían **qué** falló y **dónde** (`Smoke test`, pipeline `FAILED`, con el ARN de la
+ejecución), pero no **por qué**: la causa hubo que buscarla en el historial de Step Functions. Un registro
+debe bastarse solo, así que ahora incluye la etapa, el tipo de error y el mensaje.
 
 ## Qué NO se guarda: los valores
 

@@ -60,3 +60,19 @@ def test_record_failure_never_breaks_deploy(tmp_path, capsys):
 
 def test_s3_prefix_is_partitioned_by_day():
     assert deploy_record.s3_prefix({"finished_at": "2026-10-21T20:00:00+00:00", "deployment_id": "abc"}) == "deployments/2026/10/21/abc"
+
+
+def test_sfn_failure_reason_from_real_history_shape():
+    spec = importlib.util.spec_from_file_location("sfn_failure_reason", ROOT / "scripts" / "sfn_failure_reason.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # Forma real del historial (--reverse-order): el fallo primero, después la etapa donde ocurrió
+    history = {"events": [
+        {"type": "ExecutionFailed", "executionFailedEventDetails": {
+            "error": "TypeError", "cause": json.dumps({"errorMessage": "Need to pass bool-like values", "stackTrace": ["..."]})}},
+        {"type": "TaskStateEntered", "stateEnteredEventDetails": {"name": "BronzeToSilver"}},
+        {"type": "TaskStateEntered", "stateEnteredEventDetails": {"name": "IngestBatch"}},
+    ]}
+    assert mod.failure_reason(history) == "etapa BronzeToSilver: TypeError: Need to pass bool-like values"
+    assert mod.failure_reason({"events": [{"type": "ExecutionFailed", "executionFailedEventDetails": {"error": "States.Timeout", "cause": "texto plano"}}]}) \
+        == "etapa ?: States.Timeout: texto plano"

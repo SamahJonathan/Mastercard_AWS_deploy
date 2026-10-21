@@ -239,10 +239,25 @@ def _plain(value):
     return value
 
 
+# DMS escribe los BOOLEAN de PostgreSQL como texto en Parquet ('true'/'false'), no como booleanos
+DMS_BOOL_COLUMNS = {"wallet", "cross_border", "autenticacion_3ds", "alerta_fraude", "fraude_confirmado",
+                    "contracargo", "tokenizada_wallet"}
+_TEXT_BOOL = {"true": True, "t": True, "1": True, "false": False, "f": False, "0": False}
+
+
+def _dms_bool(value):
+    if value is None or isinstance(value, bool):
+        return value
+    if not isinstance(value, str) and pd.isna(value):
+        return None
+    return _TEXT_BOOL.get(str(value).strip().lower())
+
+
 def dms_to_snapshot(tables: dict[str, pd.DataFrame]) -> dict:
     """Aplica full load + CDC de DMS: por clave primaria gana el último cambio (dms_ts); 'D' elimina.
 
-    DMS escribe una columna Op (I/U/D) y una marca de tiempo dms_ts en cada archivo Parquet.
+    DMS escribe una columna Op (I/U/D) y una marca de tiempo dms_ts (texto ordenable) en cada archivo
+    Parquet, y los booleanos como texto: se convierten de vuelta antes de pasar al adaptador del core.
     """
     snapshot: dict = {"metadata": {"origen": "aws_dms"}}
     for table, pk in DMS_PRIMARY_KEYS.items():
@@ -256,5 +271,8 @@ def dms_to_snapshot(tables: dict[str, pd.DataFrame]) -> dict:
         if "Op" in df:
             df = df[df["Op"] != "D"]
         df = df.drop(columns=[c for c in ("Op", "dms_ts", "actualizado_en") if c in df])
-        snapshot[table] = [{k: _plain(v) for k, v in rec.items()} for rec in df.to_dict("records")]
+        snapshot[table] = [
+            {k: _dms_bool(v) if k in DMS_BOOL_COLUMNS else _plain(v) for k, v in rec.items()}
+            for rec in df.to_dict("records")
+        ]
     return snapshot

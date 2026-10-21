@@ -121,7 +121,15 @@ try {
             Write-Host "  estado: $($script:PipelineStatus)"
         } while ($script:PipelineStatus -eq "RUNNING")
         aws stepfunctions describe-execution --execution-arn $script:PipelineArn --query output --output text | Out-Host
-        if ($script:PipelineStatus -ne "SUCCEEDED") { throw "El pipeline terminó en $($script:PipelineStatus)" }
+        if ($script:PipelineStatus -ne "SUCCEEDED") {
+            # El registro debe bastarse solo: etapa, tipo de error y causa, sacados del historial de la ejecución
+            $events = aws stepfunctions get-execution-history --execution-arn $script:PipelineArn --reverse-order --max-results 25 --output json | ConvertFrom-Json
+            $failedEvt = $events.events | Where-Object { $_.taskFailedEventDetails -or $_.executionFailedEventDetails } | Select-Object -First 1
+            $stage = ($events.events | Where-Object { $_.stateEnteredEventDetails } | Select-Object -First 1).stateEnteredEventDetails.name
+            $d = $failedEvt.taskFailedEventDetails ?? $failedEvt.executionFailedEventDetails
+            $cause = try { ($d.cause | ConvertFrom-Json).errorMessage } catch { $d.cause }
+            throw "El pipeline terminó en $($script:PipelineStatus) en la etapa '$stage': $($d.error): $cause"
+        }
     }
 
     Step "Comprobaciones de IAM (lo permitido y lo que debe quedar denegado)"

@@ -93,11 +93,18 @@ jobs:
           done
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
           aws stepfunctions describe-execution --execution-arn "$EXEC" --query output --output text
-          test "$STATUS" = "SUCCEEDED"
+          if [ "$STATUS" != "SUCCEEDED" ]; then
+            # El registro debe bastarse solo: etapa, tipo de error y causa
+            HIST=$(aws stepfunctions get-execution-history --execution-arn "$EXEC" --reverse-order --max-results 25 --output json)
+            REASON=$(echo "$HIST" | python3 ../../scripts/sfn_failure_reason.py)
+            echo "error=$REASON" >> "$GITHUB_OUTPUT"
+            echo "::error::Pipeline $STATUS - $REASON"
+            exit 1
+          fi
       # Mismo registro que deploy.ps1: CloudWatch /paylake/deployments + S3 del estado (docs/observabilidad-despliegues.md)
       - name: Registro del despliegue
         if: always()
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: |
-          python3 ../../scripts/deploy_record.py             --deployment-id "$DEPLOY_ID"             --kind deploy             --status "${{ job.status == 'success' && 'success' || job.status == 'cancelled' && 'cancelled' || 'failed' }}"             --failed-step "${{ steps.init.outcome == 'failure' && 'init' || steps.plan.outcome == 'failure' && 'plan' || steps.apply.outcome == 'failure' && 'apply' || steps.smoke.outcome == 'failure' && 'pipeline' || '' }}"             --started-at "$DEPLOY_STARTED_AT"             --tf-dir .             --plan-file tfplan             --pipeline-execution-arn "${{ steps.smoke.outputs.exec_arn }}"             --pipeline-status "${{ steps.smoke.outputs.status }}"
+          python3 ../../scripts/deploy_record.py             --deployment-id "$DEPLOY_ID"             --kind deploy             --status "${{ job.status == 'success' && 'success' || job.status == 'cancelled' && 'cancelled' || 'failed' }}"             --failed-step "${{ steps.init.outcome == 'failure' && 'init' || steps.plan.outcome == 'failure' && 'plan' || steps.apply.outcome == 'failure' && 'apply' || steps.smoke.outcome == 'failure' && 'pipeline' || '' }}"             --started-at "$DEPLOY_STARTED_AT"             --tf-dir .             --plan-file tfplan             --pipeline-execution-arn "${{ steps.smoke.outputs.exec_arn }}"             --pipeline-status "${{ steps.smoke.outputs.status }}"             --error "${{ steps.smoke.outputs.error }}"

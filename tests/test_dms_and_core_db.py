@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from payments_lake import observability, pipeline, storage
+from payments_lake import observability, pipeline, silver, storage
 from payments_lake.config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,9 +25,12 @@ def _write_dms(st, table, name, rows, op, ts):
     """Imita el layout de un endpoint S3 de DMS: bronze/dms/<schema>/<tabla>/<archivo>.parquet con Op y dms_ts."""
     df = pd.DataFrame(rows)
     df.insert(0, "Op", op)
-    df.insert(1, "dms_ts", pd.Timestamp(ts))
+    df.insert(1, "dms_ts", pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M:%S.%f"))  # DMS lo escribe como texto
     if "fecha_hora" in df:
-        df["fecha_hora"] = pd.to_datetime(df["fecha_hora"])
+        df["fecha_hora"] = pd.to_datetime(df["fecha_hora"]).dt.tz_localize("UTC")
+    # Formato real de DMS para PostgreSQL BOOLEAN: texto 'true' / 'false' (None se mantiene)
+    for col in silver.DMS_BOOL_COLUMNS & set(df.columns):
+        df[col] = df[col].map(lambda v: None if v is None else ("true" if v else "false"))
     path = Path(st.bronze_root) / "dms" / "core" / table
     path.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path / name, index=False)
