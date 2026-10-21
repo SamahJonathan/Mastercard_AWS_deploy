@@ -3,6 +3,8 @@
 
 locals {
   metrics_namespace = "PaymentsLakehouse/${var.environment}"
+  # Creado por el bootstrap (CloudFormation) para que el historial sobreviva a un destroy
+  deployments_log_group = "/${var.project}/deployments"
 }
 
 # --- Canal de alertas ----------------------------------------------------------------------------
@@ -265,6 +267,15 @@ locals {
           query  = "SOURCE '${aws_cloudwatch_log_group.fn["bronze-to-silver"].name}' | SOURCE '${aws_cloudwatch_log_group.fn["silver-to-gold"].name}' | SOURCE '${aws_cloudwatch_log_group.fn["ingest"].name}' | fields @timestamp, @log, @message | filter @message like /(?i)(error|exception|traceback)/ | sort @timestamp desc | limit 20"
         }
       },
+      {
+        type = "log", x = 0, y = 26, width = 24, height = 7
+        properties = {
+          title  = "Historial de despliegues (PC y GitHub Actions)"
+          region = var.region
+          view   = "table"
+          query  = "SOURCE '${local.deployments_log_group}' | fields @timestamp, kind, result, source, git.commit_short, plan.add, plan.change, plan.destroy, duration_s, failed_step | sort @timestamp desc | limit 25"
+        }
+      },
     ],
     [for w in [
       {
@@ -300,4 +311,40 @@ locals {
 resource "aws_cloudwatch_dashboard" "pipeline" {
   dashboard_name = "${local.name}-pipeline"
   dashboard_body = jsonencode({ widgets = local.dashboard_widgets })
+}
+
+# --- Observabilidad del proceso de despliegue -----------------------------------------------------
+# scripts/deploy_record.py escribe un JSON por despliegue en /paylake/deployments (PC y GitHub Actions).
+
+resource "aws_cloudwatch_log_metric_filter" "deployments" {
+  for_each = {
+    DeploymentsFailed    = "{ ($.kind = \"deploy\") && ($.result = \"failed\") }"
+    DeploymentsSucceeded = "{ ($.kind = \"deploy\") && ($.result = \"success\") }"
+  }
+  name           = "${local.name}-${each.key}"
+  log_group_name = local.deployments_log_group
+  pattern        = each.value
+
+  metric_transformation {
+    name          = each.key
+    namespace     = "${local.metrics_namespace}/Deployments"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "deployment_failed" {
+  alarm_name          = "${local.name}-deployment-failed"
+  alarm_description   = "Un despliegue (PC o GitHub Actions) terminó con error. Ver el panel 'Historial de despliegues'"
+  namespace           = "${local.metrics_namespace}/Deployments"
+  metric_name         = "DeploymentsFailed"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+
+  depends_on = [aws_cloudwatch_log_metric_filter.deployments]
 }

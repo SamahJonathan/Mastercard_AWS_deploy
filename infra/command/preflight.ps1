@@ -82,6 +82,14 @@ if ($dmsRoles) {
 $stack = aws cloudformation describe-stacks --stack-name paylake-bootstrap --region $Region --query "Stacks[0].StackStatus" --output text 2>$null
 if ($LASTEXITCODE -eq 0) { Check "Bootstrap (CloudFormation)" "OK" "ya desplegado: $stack" } else { Check "Bootstrap (CloudFormation)" "AVISO" "pendiente: ./infra/command/bootstrap.ps1" }
 
+# --- Historial de despliegues (lo crea el bootstrap; Terraform le cuelga una alarma) ---
+$lg = aws logs describe-log-groups --log-group-name-prefix "/paylake/deployments" --region $Region --query "logGroups[0].logGroupName" --output text 2>$null
+if ($lg -eq "/paylake/deployments") {
+    Check "Log group del historial de despliegues" "OK" $lg
+} else {
+    Check "Log group del historial de despliegues" "FALTA" "volver a ejecutar ./infra/command/bootstrap.ps1 (es idempotente y lo agrega)"
+}
+
 # --- Lake Formation: avisa si ya hay administradores que el despliegue reemplazaría ---
 $lfAdmins = aws lakeformation get-data-lake-settings --region $Region --query "DataLakeSettings.DataLakeAdmins[].DataLakePrincipalIdentifier" --output text 2>$null
 if ($lfAdmins) {

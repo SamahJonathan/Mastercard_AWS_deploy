@@ -12,7 +12,9 @@ Comandos para operar la infraestructura desde tu máquina. Ejecutan **lo mismo**
 | `bootstrap.ps1` | **Una vez**, con credenciales de administrador | Despliega con **CloudFormation** el bucket del estado remoto, OIDC GitHub→AWS, el rol de despliegue y el permissions boundary; genera `backend.hcl` / `local.auto.tfvars` y configura las variables del repo en GitHub |
 | `deploy.ps1` / `deploy.sh` | **Cada vez que cambias algo** | Credenciales → tests → `terraform fmt` → `init` + `validate` → `plan` → `apply` (con confirmación) → opcional: ejecuta el pipeline y verifica `SUCCEEDED` |
 | `check_iam.ps1` | Al final de cada `deploy.ps1` (o cuando quieras) | Simula con `aws iam simulate-principal-policy` lo que cada identidad puede **y lo que no** (25 casos). Ver [docs/iam.md](../../docs/iam.md) |
-| `destroy.ps1` | Al terminar una demo | `-PauseOnly` apaga la ejecución horaria; sin flag destruye la plataforma |
+| `destroy.ps1` | Al terminar una demo | Muestra el plan, pide confirmación; `-PauseOnly` apaga la ejecución horaria, sin flag destruye la plataforma |
+
+`deploy.ps1` y `destroy.ps1` dejan registro de cada ejecución: `logs/<id>.log` + un JSON en CloudWatch Logs (`/paylake/deployments`) y en S3. Ver [docs/observabilidad-despliegues.md](../../docs/observabilidad-despliegues.md).
 
 ## Flujo típico al actualizar un cambio
 

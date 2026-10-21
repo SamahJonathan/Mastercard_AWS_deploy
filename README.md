@@ -28,7 +28,7 @@ con **IAM de mínimo privilegio** y **CI/CD en GitHub Actions vía OIDC** (sin a
 | **SQL avanzado** | Ventanas, z-score, percentiles, cohortes, `ROLLUP`/`GROUPING`, `FILTER` — [`sql/advanced/`](sql/advanced/); Spark SQL en el job de Glue |
 | **Python / Shell** | Paquete `payments_lake`, 30 tests; scripts PowerShell/bash en [`infra/command/`](infra/command/) |
 | **Git** | GitHub Actions: tests, `terraform validate`, `cfn-lint`, ShellCheck, deploy con OIDC |
-| **Observabilidad** | Dashboard CloudWatch, alarmas de calidad de datos y de seguridad, X-Ray, presupuesto |
+| **Observabilidad** | Dashboard CloudWatch, alarmas de calidad de datos y de seguridad, X-Ray, presupuesto, y **registro estructurado de cada despliegue** (PC y GitHub) con alarma si falla — [`docs/observabilidad-despliegues.md`](docs/observabilidad-despliegues.md) |
 | **QuickSight / Power BI** | Datasets en Terraform + guía — [`docs/quicksight.md`](docs/quicksight.md), [`docs/powerbi.md`](docs/powerbi.md), [`powerbi/`](powerbi/) |
 
 ## Arquitectura
@@ -99,7 +99,7 @@ infra/bootstrap/        # CloudFormation: estado remoto, OIDC GitHub, rol de des
 infra/platform/         # Terraform: el lakehouse completo (iam.tf concentra todas las identidades)
 infra/command/          # comandos de cada actualización: bootstrap · deploy · check_iam · destroy
 dashboard/              # Streamlit + despliegue a Lightsail
-docs/                   # IAM, QuickSight, Power BI
+docs/                   # antes de desplegar, IAM, observabilidad de despliegues, QuickSight, Power BI
 tests/                  # 30 tests
 ```
 
@@ -138,7 +138,7 @@ Después, cada push a `main` lo despliega **GitHub Actions** con OIDC. Variables
 | Lambda, Step Functions, S3, Athena, Glue Catalog, IAM, Lake Formation | centavos |
 | Job de Glue (diario, 2 DPU × ~3 min) | ~USD 0,05 por ejecución |
 | KMS (1 llave) | ~USD 1 / mes |
-| RDS `db.t4g.micro` + DMS `dms.t3.micro` + EC2 `t4g.nano` (`enable_dms`) | ~USD 1,5–2,5 / día |
+| RDS `db.t4g.micro` + DMS `dms.t3.small` + EC2 `t4g.micro` (`enable_dms`) | ~USD 2–3 / día |
 | QuickSight (`enable_quicksight`) | prueba gratuita de 30 días |
 
 Una semana con todo encendido ronda **USD 15–20** (estimación). `aws_budgets_budget` avisa por email al 80 % de

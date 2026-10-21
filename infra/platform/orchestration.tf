@@ -40,6 +40,13 @@ resource "aws_cloudwatch_log_group" "sfn" {
   retention_in_days = 14
 }
 
+# Step Functions valida al crearse que su rol pueda entregar logs: hay que esperar a que la política
+# exista y a que IAM la propague (consistencia eventual, unos segundos).
+resource "time_sleep" "sfn_policy_propagation" {
+  create_duration = "20s"
+  triggers        = { policy = aws_iam_role_policy.pipeline_sfn.policy }
+}
+
 resource "aws_sfn_state_machine" "pipeline" {
   name       = "${local.name}-pipeline"
   role_arn   = module.role["pipeline-sfn"].arn
@@ -50,6 +57,8 @@ resource "aws_sfn_state_machine" "pipeline" {
     include_execution_data = false
     level                  = "ERROR"
   }
+
+  depends_on = [time_sleep.sfn_policy_propagation]
 }
 
 # --- Agenda --------------------------------------------------------------------------------

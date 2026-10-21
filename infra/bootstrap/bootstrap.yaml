@@ -3,6 +3,7 @@ Description: >
   Payments Lakehouse - bootstrap. Se despliega UNA vez con AWS CloudFormation (antes que Terraform):
   bucket del estado remoto de Terraform, proveedor OIDC de GitHub y rol de despliegue sin access keys.
   Va en CloudFormation porque Terraform no puede crear el bucket donde guarda su propio estado.
+  Tambien crea el log group del historial de despliegues, que debe sobrevivir a un destroy.
 
 Parameters:
   Project:
@@ -61,6 +62,16 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: "false"
+
+  # Historial de despliegues (lo escribe scripts/deploy_record.py desde la PC y desde GitHub Actions).
+  # Vive aquí y no en Terraform para que sobreviva a un destroy de la plataforma.
+  DeploymentsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/${Project}/deployments"
+      RetentionInDays: 90
 
   GithubOidcProvider:
     Type: AWS::IAM::OIDCProvider
@@ -307,6 +318,8 @@ Resources:
                 Resource: "*"
 
 Outputs:
+  DeploymentsLogGroup:
+    Value: !Ref DeploymentsLogGroup
   WorkloadBoundaryArn:
     Value: !Ref WorkloadBoundary
   StateBucket:

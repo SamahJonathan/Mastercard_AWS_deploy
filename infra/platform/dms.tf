@@ -14,8 +14,8 @@ resource "aws_dms_replication_subnet_group" "main" {
 resource "aws_dms_replication_instance" "main" {
   count                       = local.dms_count
   replication_instance_id     = "${local.name}-dms"
-  replication_instance_class  = "dms.t3.micro"
-  allocated_storage           = 20
+  replication_instance_class  = var.dms_instance_class
+  allocated_storage           = 50 # incluidos en la clase dms.t3.small
   multi_az                    = false
   publicly_accessible         = false
   kms_key_arn                 = aws_kms_key.lake.arn

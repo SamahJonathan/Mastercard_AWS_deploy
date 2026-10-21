@@ -82,7 +82,7 @@ resource "aws_s3_object" "core_loader" {
 resource "aws_instance" "loader" {
   count                  = local.dms_count
   ami                    = data.aws_ssm_parameter.al2023_arm.value
-  instance_type          = "t4g.nano"
+  instance_type          = var.loader_instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.loader.id]
   iam_instance_profile   = module.role["core-loader"].instance_profile_name

@@ -103,8 +103,8 @@ No crea nada; revisa lo que suele bloquear. Cada fila dice `OK`, `AVISO` o `FALT
 ./infra/command/bootstrap.ps1 -AlertEmail tu@correo.com
 ```
 
-Crea el bucket del estado de Terraform, la confianza OIDC con GitHub, el rol de despliegue y el
-permissions boundary; escribe `backend.hcl` y `local.auto.tfvars` (no se suben al repo) y configura las
+Crea el bucket del estado de Terraform, el log group del historial de despliegues (`/paylake/deployments`),
+la confianza OIDC con GitHub, el rol de despliegue y el permissions boundary; escribe `backend.hcl` y `local.auto.tfvars` (no se suben al repo) y configura las
 variables del repositorio en GitHub.
 
 **Confirmar la suscripción** en el email *AWS Notification - Subscription Confirmation*, si no las
@@ -153,4 +153,8 @@ suscripción en *Manage QuickSight → Account settings*.
 | `no space left on device` al instalar el provider en CloudShell | CloudShell da 1 GB persistente en `$HOME` y el provider de AWS pesa ~800 MB | el script usa `TF_DATA_DIR=/tmp/...` (`44b7f77`); borrar clones repetidos con `rm -rf ~/Mastercard_AWS_deploy` |
 | Secreto de la access key pegado en un chat | se copió la salida completa de `cloudshell_admin.sh` | rotar la key (sección *Rotar la access key*) antes de configurarla; compartir sólo la salida de `aws sts get-caller-identity` |
 | `terraform init`: *Too many command line arguments. Did you mean to use -chdir?* | PowerShell parte los argumentos que empiezan con `-` y llevan un punto: `-backend-config=backend.hcl` llega como `-backend-config=backend` y `.hcl` | ir entre comillas: `"-backend-config=backend.hcl"` (corregido en `deploy.ps1` y `destroy.ps1`) |
+| `apply` falla al crear `aws_cloudwatch_log_metric_filter.deployments`: *log group does not exist* | el bootstrap se ejecutó antes de que existiera el log group del historial | volver a ejecutar `./infra/command/bootstrap.ps1` (idempotente); `preflight.ps1` lo detecta |
+| EC2: *The specified instance type is not eligible for Free Tier* | las cuentas con plan gratuito sólo lanzan tipos elegibles (`aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`) | `loader_instance_type = "t4g.micro"` (por defecto desde `b327197`+) |
+| DMS: *Invalid ReplicationInstance class* | `dms.t3.micro` no se ofrece en sa-east-1 (`aws dms describe-orderable-replication-instances`) | `dms_instance_class = "dms.t3.small"` con 50 GB incluidos |
+| Step Functions: *The state machine IAM Role is not authorized to access the Log Destination* | la máquina de estados se creaba antes de que su rol tuviera la política de logs (y antes de que IAM la propagara) | `depends_on` a la política + `time_sleep` de 20 s |
 | Repositorio clonado dentro de sí mismo (`Mastercard_AWS_deploy/Mastercard_AWS_deploy`) | se ejecutó `git clone` estando ya dentro de la carpeta | partir siempre con `cd ~` (está en los comandos del paso 2) |

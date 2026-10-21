@@ -180,8 +180,8 @@ locals {
   identity_policies = merge(
     { for k in keys(local.functions) : k => jsonencode({ Version = "2012-10-17", Statement = concat(local.lambda_common[k], local.lambda_keys[k]) }) },
     {
-      pipeline-sfn = "" # ver orchestration_policies
-      scheduler    = "" # ver orchestration_policies
+      pipeline-sfn = "" # ver sfn_policy (abajo)
+      scheduler    = "" # ver scheduler_policy (abajo)
       glue-gold-analytics = jsonencode({ Version = "2012-10-17", Statement = [
         { Sid = "ReadSilver", Effect = "Allow", Action = ["s3:GetObject", "s3:ListBucket"], Resource = [local.arn["silver"], "${local.arn["silver"]}/*"] },
         { Sid = "ReadScript", Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${local.arn["artifacts"]}/glue/*"] },
@@ -229,17 +229,16 @@ locals {
   )
 
   # Políticas de orquestación: nombran las Lambdas y la máquina de estados, que a su vez usan roles del
-  # módulo. Se adjuntan aparte (abajo) para no crear un ciclo de dependencias.
-  orchestration_policies = {
-    pipeline-sfn = jsonencode({ Version = "2012-10-17", Statement = [
-      { Sid = "InvokeStages", Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = [for k in ["ingest", "bronze-to-silver", "silver-to-gold"] : aws_lambda_function.fn[k].arn] },
-      # La entrega de logs de Step Functions sólo admite estas acciones a nivel de cuenta
-      { Sid = "LogDelivery", Effect = "Allow", Action = ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], Resource = ["*"] },
-    ] })
-    scheduler = jsonencode({ Version = "2012-10-17", Statement = [
-      { Sid = "StartPipeline", Effect = "Allow", Action = ["states:StartExecution"], Resource = [aws_sfn_state_machine.pipeline.arn] },
-    ] })
-  }
+  # módulo. Se adjuntan aparte (abajo) para no crear un ciclo de dependencias. Van en dos locals separados:
+  # la máquina de estados espera a la suya, y la del Scheduler nombra a la máquina de estados.
+  sfn_policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Sid = "InvokeStages", Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = [for k in ["ingest", "bronze-to-silver", "silver-to-gold"] : aws_lambda_function.fn[k].arn] },
+    # La entrega de logs de Step Functions sólo admite estas acciones a nivel de cuenta
+    { Sid = "LogDelivery", Effect = "Allow", Action = ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], Resource = ["*"] },
+  ] })
+  scheduler_policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Sid = "StartPipeline", Effect = "Allow", Action = ["states:StartExecution"], Resource = [aws_sfn_state_machine.pipeline.arn] },
+  ] })
 
   # Únicas políticas administradas por AWS del proyecto, y por qué: DMS no acepta otra
   managed_attachments = {
@@ -262,11 +261,27 @@ module "role" {
   permissions_boundary = local.boundary_arn
 }
 
-resource "aws_iam_role_policy" "orchestration" {
-  for_each = local.orchestration_policies
-  name     = "least-privilege"
-  role     = module.role[each.key].name
-  policy   = each.value
+resource "aws_iam_role_policy" "pipeline_sfn" {
+  name   = "least-privilege"
+  role   = module.role["pipeline-sfn"].name
+  policy = local.sfn_policy
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  name   = "least-privilege"
+  role   = module.role["scheduler"].name
+  policy = local.scheduler_policy
+}
+
+# Renombres de direcciones en el estado (antes era un solo recurso con for_each): no recrea nada
+moved {
+  from = aws_iam_role_policy.orchestration["pipeline-sfn"]
+  to   = aws_iam_role_policy.pipeline_sfn
+}
+
+moved {
+  from = aws_iam_role_policy.orchestration["scheduler"]
+  to   = aws_iam_role_policy.scheduler
 }
 
 resource "aws_iam_role_policy_attachment" "managed" {

@@ -58,6 +58,11 @@ jobs:
       run:
         working-directory: infra/platform
     steps:
+      - name: Inicio del despliegue
+        run: |
+          echo "DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "DEPLOY_ID=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}-gh${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+        working-directory: .
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -67,19 +72,32 @@ jobs:
         with:
           terraform_wrapper: false
       - name: Terraform init
+        id: init
         run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
       - name: Terraform plan
+        id: plan
         run: terraform plan -input=false -out=tfplan
       - name: Terraform apply
+        id: apply
         run: terraform apply -input=false tfplan
       - name: Ejecutar pipeline (smoke test en AWS)
+        id: smoke
         if: github.event_name == 'workflow_dispatch' && inputs.run_pipeline
         run: |
           ARN=$(terraform output -raw state_machine_arn)
           EXEC=$(aws stepfunctions start-execution --state-machine-arn "$ARN" --input '{"generate": true}' --query executionArn --output text)
+          echo "exec_arn=$EXEC" >> "$GITHUB_OUTPUT"
           for i in $(seq 1 60); do
             STATUS=$(aws stepfunctions describe-execution --execution-arn "$EXEC" --query status --output text)
             echo "status=$STATUS"; [ "$STATUS" != "RUNNING" ] && break; sleep 10
           done
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
           aws stepfunctions describe-execution --execution-arn "$EXEC" --query output --output text
           test "$STATUS" = "SUCCEEDED"
+      # Mismo registro que deploy.ps1: CloudWatch /paylake/deployments + S3 del estado (docs/observabilidad-despliegues.md)
+      - name: Registro del despliegue
+        if: always()
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          python3 ../../scripts/deploy_record.py             --deployment-id "$DEPLOY_ID"             --kind deploy             --status "${{ job.status == 'success' && 'success' || job.status == 'cancelled' && 'cancelled' || 'failed' }}"             --failed-step "${{ steps.init.outcome == 'failure' && 'init' || steps.plan.outcome == 'failure' && 'plan' || steps.apply.outcome == 'failure' && 'apply' || steps.smoke.outcome == 'failure' && 'pipeline' || '' }}"             --started-at "$DEPLOY_STARTED_AT"             --tf-dir .             --plan-file tfplan             --pipeline-execution-arn "${{ steps.smoke.outputs.exec_arn }}"             --pipeline-status "${{ steps.smoke.outputs.status }}"

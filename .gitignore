@@ -14,9 +14,13 @@ __pycache__/
 # Datos generados localmente
 data/
 
+# Logs y registros de despliegue locales (tienen ARNs y el número de cuenta)
+logs/
+
 # Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
 tfplan
+tfplan-*
 infra/platform/.build/

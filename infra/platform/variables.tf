@@ -115,3 +115,15 @@ variable "glue_schedule" {
   type        = string
   default     = "cron(0 6 * * ? *)"
 }
+
+variable "loader_instance_type" {
+  description = "EC2 de carga del core. Debe ser elegible para Free Tier en cuentas con plan gratuito (ARM: t4g.micro)"
+  type        = string
+  default     = "t4g.micro"
+}
+
+variable "dms_instance_class" {
+  description = "Clase de la instancia de replicación DMS. dms.t3.micro no existe en sa-east-1; la menor es dms.t3.small"
+  type        = string
+  default     = "dms.t3.small"
+}
