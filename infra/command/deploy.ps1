@@ -47,7 +47,7 @@ Step "4/6 Init + validate (estado remoto en S3)"
 if (-not (Test-Path "$Platform/backend.hcl")) {
     throw "No existe infra/platform/backend.hcl. Ejecuta primero ./infra/command/bootstrap.ps1"
 }
-Invoke-Checked { terraform "-chdir=$Platform" init -input=false -backend-config=backend.hcl }
+Invoke-Checked { terraform "-chdir=$Platform" init -input=false "-backend-config=backend.hcl" }
 Invoke-Checked { terraform "-chdir=$Platform" validate }
 
 Step "5/6 Plan"

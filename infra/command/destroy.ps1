@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $env:Path = $env:Path + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 $Platform = Join-Path (Resolve-Path "$PSScriptRoot/../..").Path "infra/platform"
 
-terraform "-chdir=$Platform" init -input=false -backend-config=backend.hcl | Out-Null
+terraform "-chdir=$Platform" init -input=false "-backend-config=backend.hcl" | Out-Null
 if ($PauseOnly) {
     terraform "-chdir=$Platform" apply "-var=schedule_enabled=false"
 } else {
