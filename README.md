@@ -118,6 +118,7 @@ Requisitos: AWS CLI configurado con un usuario administrador (sólo para el boot
 Todos los comandos viven en [`infra/command/`](infra/command/):
 
 ```powershell
+./infra/command/preflight.ps1                              # antes de empezar: detecta bloqueos
 ./infra/command/bootstrap.ps1 -AlertEmail tu@correo.com   # una vez (CloudFormation)
 ./infra/command/deploy.ps1 -RunPipeline                    # cada cambio: tests → plan → apply → pipeline → check_iam
 ./infra/command/destroy.ps1                                # al terminar
