@@ -7,6 +7,7 @@ from datetime import date
 from functools import lru_cache
 
 from . import pipeline, storage
+from .observability import emit_stage
 from .config import get_settings
 
 GOLD_TABLES = {"daily_merchant_kpis", "interchange_settlement", "fraud_alerts", "cross_border_corridors"}
@@ -20,15 +21,20 @@ def _ref_date(event: dict) -> date | None:
 
 def ingest_handler(event, context):
     size = int((event or {}).get("batch_size") or os.getenv("BATCH_SIZE", "2000"))
-    return pipeline.ingest_batch(size)
+    return _observed(pipeline.ingest_batch(size))
 
 
 def bronze_to_silver_handler(event, context):
-    return pipeline.bronze_to_silver(_ref_date(event))
+    return _observed(pipeline.bronze_to_silver(_ref_date(event)))
 
 
 def silver_to_gold_handler(event, context):
-    return pipeline.silver_to_gold(_ref_date(event))
+    return _observed(pipeline.silver_to_gold(_ref_date(event)))
+
+
+def _observed(result: dict) -> dict:
+    emit_stage(result)
+    return result
 
 
 # --- API de consumo (API Gateway HTTP API, payload v2) ---------------------------------------

@@ -22,18 +22,34 @@ jobs:
         run: pytest -q
       - name: Smoke test del pipeline local
         run: PYTHONPATH=src python -m payments_lake.pipeline demo --days 2 --batches-per-day 2 --batch-size 500
+      - name: Sintaxis del job de Glue y del loader del core
+        run: python -m py_compile glue/jobs/gold_card_analytics.py scripts/core_db/load_core_db.py
+
+  cloudformation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cfn-lint
+      - run: cfn-lint infra/bootstrap/bootstrap.yaml
 
   terraform:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        stack: [bootstrap, platform]
     defaults:
       run:
-        working-directory: infra/${{ matrix.stack }}
+        working-directory: infra/platform
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck de los scripts
+        run: shellcheck infra/command/deploy.sh dashboard/deploy_lightsail.sh

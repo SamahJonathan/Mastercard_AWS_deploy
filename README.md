@@ -1,143 +1,153 @@
 # Payments Lakehouse en AWS · Bronze / Silver / Gold
 
 Plataforma de datos que **ingiere, depura, gobierna e intercambia** transacciones de pago con tarjeta en AWS,
-siguiendo la arquitectura medallion. Todo es **infraestructura como código (Terraform)**, con **IAM de mínimo
-privilegio** y **CI/CD en GitHub Actions vía OIDC** (sin access keys).
+siguiendo la arquitectura medallion. Todo es **infraestructura como código** (Terraform + CloudFormation),
+con **IAM de mínimo privilegio** y **CI/CD en GitHub Actions vía OIDC** (sin access keys).
 
 > ⚠️ Todos los datos son **sintéticos**: bancos, comercios, tarjetas, tipos de cambio y tasas de intercambio son inventados.
 
-## Qué demuestra
+## Cobertura técnica
 
-| Tema | Implementación |
+| Requisito | Dónde se ve en el proyecto |
 |---|---|
-| Ingesta multi-fuente | (1) flujo horario de autorizaciones de adquirentes (JSON lines con PAN) y (2) extracto completo del sistema core (`sample_data/mastercard_db_ficticia.json`, JSON anidado en español, ya tokenizado) |
-| Bronze | Datos crudos e inmutables, particionados por `ingest_date`, versionados y cifrados con KMS |
-| Silver | Esquema canónico único para ambas fuentes, tipado, deduplicación, 10+ reglas de calidad, **cuarentena** con motivo de rechazo, enriquecimiento con dimensiones |
-| Seguridad PCI | El PAN se **tokeniza (HMAC-SHA256)** en Silver; nunca sale de Bronze en claro (incluso la cuarentena lo enmascara: `510510******1234`). El secreto vive en SSM SecureString |
-| Calidad / reconciliación | Los totales que declara la fuente core (GDV, aprobadas, fraudes, contracargos…) se reconcilian contra Silver → tabla `dq_source_reconciliation` |
-| Gold | KPIs por comercio, **liquidación de intercambio emisor↔adquirente**, alertas de fraude (5 reglas), **precision/recall de cada regla vs. fraudes confirmados**, corredores transfronterizos |
-| Intercambio de datos | Archivos de liquidación por emisor (`CSV + _manifest.json` con SHA-256 y totales) + **rol IAM por emisor** que sólo puede leer su carpeta (con ExternalId) + API REST sobre Gold |
-| Orquestación | Step Functions (reintentos con backoff) disparado por EventBridge Scheduler; alarma CloudWatch si falla |
-| Consumo | Athena (workgroup con tope de 1 GB por consulta) + consultas guardadas, API Gateway, dashboard Streamlit en Lightsail |
-| Idempotencia | Reprocesar cualquier ventana produce exactamente el mismo resultado (`overwrite_partitions`) — cubierto por tests |
+| **S3** | 7 buckets (una capa por bucket), KMS, versionado, ciclo de vida, TLS obligatorio — [`s3.tf`](infra/platform/s3.tf) |
+| **Glue** | Data Catalog (3 bases + partition projection), **job PySpark 5.0** con **Glue Data Quality** — [`glue_job.tf`](infra/platform/glue_job.tf), [`gold_card_analytics.py`](glue/jobs/gold_card_analytics.py) |
+| **DMS** | Réplica **full load + CDC** de PostgreSQL (core bancario) a Bronze en Parquet — [`dms.tf`](infra/platform/dms.tf), adaptador en [`silver.py`](src/payments_lake/silver.py) |
+| **Athena** | Workgroup con tope de costo, 12 consultas guardadas — [`sql/`](sql/) |
+| **Lambda** | 4 funciones: ingesta, bronze→silver, silver→gold, API — [`handlers.py`](src/payments_lake/handlers.py) |
+| **IAM** | Un rol por identidad, políticas acción por acción, **permissions boundary**, 25 comprobaciones automáticas — [`iam.tf`](infra/platform/iam.tf), [`docs/iam.md`](docs/iam.md) |
+| **CloudWatch** | Métricas de negocio y calidad (EMF), alarmas, dashboard, Logs Insights — [`observability.tf`](infra/platform/observability.tf) |
+| **CloudFormation** | Bootstrap: estado de Terraform, OIDC GitHub, rol de despliegue, boundary — [`bootstrap.yaml`](infra/bootstrap/bootstrap.yaml) |
+| **CloudTrail** | Trail con eventos de datos sobre Bronze + alertas de accesos denegados y cambios de permisos — [`cloudtrail.tf`](infra/platform/cloudtrail.tf) |
+| **Step Functions** | Orquestación con reintentos y backoff — [`orchestration.tf`](infra/platform/orchestration.tf) |
+| **EventBridge** | Scheduler horario del pipeline + regla de fallas de Glue → SNS |
+| **Lake Formation** | LF-Tags (`layer`, `sensitivity`), analista sólo Gold, analista de riesgo Silver+Gold — [`lakeformation.tf`](infra/platform/lakeformation.tf) |
+| **EC2** | Instancia de carga del core (IMDSv2, sin SSH, Session Manager) — [`core_db.tf`](infra/platform/core_db.tf) |
+| **VPC** | Subredes privadas/pública, endpoint S3, flow logs, security groups mínimos — [`network.tf`](infra/platform/network.tf) |
+| **Medallion** | Bronze (crudo) → Silver (canónico, tokenizado, cuarentena) → Gold (productos de datos) |
+| **SQL avanzado** | Ventanas, z-score, percentiles, cohortes, `ROLLUP`/`GROUPING`, `FILTER` — [`sql/advanced/`](sql/advanced/); Spark SQL en el job de Glue |
+| **Python / Shell** | Paquete `payments_lake`, 30 tests; scripts PowerShell/bash en [`infra/command/`](infra/command/) |
+| **Git** | GitHub Actions: tests, `terraform validate`, `cfn-lint`, ShellCheck, deploy con OIDC |
+| **Observabilidad** | Dashboard CloudWatch, alarmas de calidad de datos y de seguridad, X-Ray, presupuesto |
+| **QuickSight / Power BI** | Datasets en Terraform + guía — [`docs/quicksight.md`](docs/quicksight.md), [`docs/powerbi.md`](docs/powerbi.md), [`powerbi/`](powerbi/) |
 
 ## Arquitectura
 
 ```mermaid
 flowchart LR
   subgraph Fuentes
-    A[Adquirentes<br/>JSON lines c/ PAN]:::src
-    C[Sistema core<br/>extracto JSON]:::src
+    A[Adquirentes<br/>JSON lines con PAN]:::src
+    subgraph VPC
+      EC2[EC2 carga<br/>+ CDC simulado] --> RDS[(RDS PostgreSQL<br/>core bancario)]:::src
+      DMS[AWS DMS<br/>full load + CDC]
+    end
   end
-  subgraph AWS["AWS (sa-east-1) · Terraform"]
+  subgraph Lakehouse["AWS sa-east-1"]
     EB[EventBridge<br/>Scheduler] --> SF[Step Functions]
     SF --> L1[λ ingest] --> B[(S3 Bronze<br/>crudo · versionado)]
-    C --> B
-    SF --> L2[λ bronze→silver] 
-    B --> L2 --> S[(S3 Silver<br/>tokenizado · tipado)]
+    RDS --> DMS --> B
+    SF --> L2[λ bronze→silver]
+    B --> L2 --> S[(S3 Silver<br/>canónico · tokenizado)]
     L2 --> Q[(Cuarentena)]
     SF --> L3[λ silver→gold]
-    S --> L3 --> G[(S3 Gold<br/>productos de datos)]
+    S --> L3 --> G[(S3 Gold)]
+    S --> GJ[Glue PySpark<br/>+ Data Quality] --> G
     L3 --> X[(S3 Exchange<br/>liquidaciones por emisor)]
-    GC[Glue Data Catalog] -.-> AT[Athena]
+    LF{{Lake Formation<br/>LF-Tags}} -.-> S & G
     G --> API[API Gateway + λ]
-    KMS[KMS] -.-> B & S & G & X
+    G --> AT[Athena]
   end
   X -->|rol IAM por emisor| BANK[Emisores]
-  API --> DASH[Dashboard<br/>Lightsail]
-  AT --> AN[Analistas<br/>rol sin acceso a Bronze]
+  AT --> QS[QuickSight / Power BI]
+  API --> DASH[Dashboard Streamlit<br/>Lightsail]
+  CT[CloudTrail] -.-> B
+  CW[CloudWatch<br/>métricas · alarmas · dashboard] -.-> SF
   classDef src fill:#fde68a,stroke:#b45309
 ```
 
-### Modelo de capas
+### Capas
 
 | Capa | Bucket | Contenido | Quién accede |
 |---|---|---|---|
-| Bronze | `paylake-dev-bronze-<cuenta>` | `transactions/ingest_date=…/batch_*.jsonl`, `core_snapshot/ingest_date=…/*.json` | sólo λ ingest (escritura) y λ bronze→silver (lectura) |
-| Silver | `paylake-dev-silver-<cuenta>` | `transactions/source_system=…/txn_date=…`, `quarantine/`, `dq_source_reconciliation/`, `dim_*` | λ de transformación, rol analista |
-| Gold | `paylake-dev-gold-<cuenta>` | `daily_merchant_kpis`, `interchange_settlement`, `fraud_alerts`, `fraud_rule_performance`, `cross_border_corridors` | API, rol analista |
+| Bronze | `paylake-dev-bronze-<cuenta>` | `transactions/` (simulador), `dms/core/<tabla>/` (réplica DMS), `core_snapshot/` (extracto JSON) | ingest, DMS y bronze→silver. **Ningún humano** |
+| Silver | `paylake-dev-silver-<cuenta>` | `transactions/source_system=…/txn_date=…`, `quarantine/`, `dq_source_reconciliation/`, `dim_*` | pipeline; analista de riesgo vía Lake Formation |
+| Gold | `paylake-dev-gold-<cuenta>` | KPIs, liquidación de intercambio, alertas y desempeño de reglas de fraude, corredores, segmentos de tarjetas (Glue) | API, analistas vía Lake Formation, QuickSight |
 | Exchange | `paylake-dev-exchange-<cuenta>` | `outbound/issuer_id=…/settlement_date=…/settlement.csv + _manifest.json` | cada emisor, sólo su prefijo |
+
+## Qué hace cada capa
+
+- **Ingesta multi-fuente**: el simulador de adquirentes (con errores inyectados a propósito) y el **core bancario**, que llega
+  por **DMS (CDC)** o, si DMS está apagado, como extracto JSON ([`sample_data/`](sample_data/)).
+- **Silver**: esquema canónico único, tipado, deduplicación, 10+ reglas de calidad, **cuarentena** con motivo, enriquecimiento.
+  El PAN se **tokeniza (HMAC-SHA256)** y nunca sale de Bronze en claro; la cuarentena lo enmascara (`510510******1234`).
+  Los totales que declara el core se **reconcilian** contra Silver (6/6 métricas cuadran).
+- **Gold**: KPIs por comercio, **liquidación de intercambio emisor↔adquirente**, alertas de fraude (5 reglas) y su
+  **precision/recall contra fraudes confirmados**, corredores transfronterizos; segmentación de tarjetas y tendencias en Glue.
+- **Intercambio de datos**: archivos de liquidación por emisor con manifiesto (SHA-256, totales), rol IAM por emisor con
+  ExternalId y API REST sobre Gold.
 
 ## Estructura
 
 ```
-src/payments_lake/      # código Python (mismo código en local y en Lambda)
-  generator.py          # simulador de adquirentes con errores y patrones de fraude inyectados
-  bronze.py silver.py gold.py quality.py reference.py
-  storage.py            # disco local o S3 + Glue (awswrangler)
-  pipeline.py           # orquestación + CLI
-  handlers.py           # entrypoints Lambda y API
-sample_data/            # extracto core ficticio (segunda fuente)
-sql/                    # consultas Athena (se publican como Named Queries)
-infra/bootstrap/        # estado remoto + OIDC GitHub + rol de despliegue
-infra/command/          # comandos que se ejecutan en cada actualización (bootstrap / deploy / destroy)
-infra/platform/         # el lakehouse completo
-dashboard/              # Streamlit + script de despliegue a Lightsail
-.github/workflows/      # CI (tests + terraform validate) y Deploy (OIDC)
-tests/                  # 26 tests: calidad, silver, gold, pipeline end-to-end, API
+src/payments_lake/      # paquete Python: mismo código en local y en Lambda
+glue/jobs/              # job PySpark de Glue (Data Quality + Spark SQL)
+scripts/core_db/        # carga y CDC simulado del core bancario (PostgreSQL)
+sample_data/            # extracto core ficticio
+sql/ · sql/advanced/    # consultas Athena (se publican como Named Queries)
+infra/bootstrap/        # CloudFormation: estado remoto, OIDC GitHub, rol de despliegue, boundary
+infra/platform/         # Terraform: el lakehouse completo (iam.tf concentra todas las identidades)
+infra/command/          # comandos de cada actualización: bootstrap · deploy · check_iam · destroy
+dashboard/              # Streamlit + despliegue a Lightsail
+docs/                   # IAM, QuickSight, Power BI
+tests/                  # 30 tests
 ```
 
 ## 1. Ejecutar en local (sin AWS)
 
-```bash
-python -m venv .venv && .venv/Scripts/activate      # Windows (Linux/Mac: source .venv/bin/activate)
+```powershell
+python -m venv .venv; .venv\Scripts\activate
 pip install -r requirements-dev.txt
 pytest -q
-PYTHONPATH=src python -m payments_lake.pipeline demo --days 3
-pip install -r dashboard/requirements.txt && streamlit run dashboard/app.py
+$env:PYTHONPATH="src"; python -m payments_lake.pipeline demo --days 3
+pip install -r dashboard/requirements.txt; streamlit run dashboard/app.py
 ```
-
-Salida de ejemplo (`demo --days 3`):
-
-- simulador: 18.401 registros Bronze → 98 duplicados eliminados → 515 a cuarentena → 17.788 en Silver
-- extracto core: 1.500 registros → 1.500 en Silver; reconciliación **6/6 métricas OK**
-- Gold: 202 archivos de liquidación para emisores; regla `ip_country_mismatch` detecta 5 de 9 fraudes confirmados (recall 56 %)
 
 ## 2. Desplegar en AWS
 
-Requisitos: cuenta AWS, [AWS CLI](https://aws.amazon.com/cli/) configurado con un usuario/rol administrador (sólo para el bootstrap), Terraform ≥ 1.10.
-
-Los comandos viven en [`infra/command/`](infra/command/) (PowerShell y bash) y ejecutan lo mismo que GitHub Actions:
+Requisitos: AWS CLI configurado con un usuario administrador (sólo para el bootstrap), Terraform ≥ 1.10.
+Todos los comandos viven en [`infra/command/`](infra/command/):
 
 ```powershell
-# 2.1 Una sola vez: estado remoto + OIDC GitHub + rol de despliegue + variables del repo en GitHub
-./infra/command/bootstrap.ps1
-
-# 2.2 Cada vez que se actualiza un cambio: tests -> fmt -> validate -> plan -> apply -> pipeline
-./infra/command/deploy.ps1 -RunPipeline
-
-# 2.3 Probar la API
-curl.exe -H "x-api-key: $(terraform -chdir=infra/platform output -raw api_key)" "$(terraform -chdir=infra/platform output -raw api_url)/gold/interchange_settlement"
+./infra/command/bootstrap.ps1 -AlertEmail tu@correo.com   # una vez (CloudFormation)
+./infra/command/deploy.ps1 -RunPipeline                    # cada cambio: tests → plan → apply → pipeline → check_iam
+./infra/command/destroy.ps1                                # al terminar
 ```
 
-Desde ahí, los despliegues los hace también **GitHub Actions** (el bootstrap ya deja configuradas las variables
-`AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET` y el environment `prod`). Cada push a `main` corre tests, `terraform plan` y `apply`;
-`workflow_dispatch` además ejecuta el pipeline y verifica que termine en `SUCCEEDED`.
+Después, cada push a `main` lo despliega **GitHub Actions** con OIDC. Variables opcionales del repo:
+`ENABLE_DMS`, `ENABLE_QUICKSIGHT`, `QUICKSIGHT_USER_ARN`, `ALERT_EMAIL`.
 
-### Dashboard en Lightsail
+### Costos
 
-```bash
-LIGHTSAIL_HOST=<ip> SSH_KEY=<ruta>/LightsailDefaultKey-sa-east-1.pem \
-GOLD_API_URL=$(terraform -chdir=infra/platform output -raw api_url) \
-GOLD_API_KEY=$(terraform -chdir=infra/platform output -raw api_key) \
-./dashboard/deploy_lightsail.sh
-```
+| Pieza | Costo aproximado (sa-east-1) |
+|---|---|
+| Lambda, Step Functions, S3, Athena, Glue Catalog, IAM, Lake Formation | centavos |
+| Job de Glue (diario, 2 DPU × ~3 min) | ~USD 0,05 por ejecución |
+| KMS (1 llave) | ~USD 1 / mes |
+| RDS `db.t4g.micro` + DMS `dms.t3.micro` + EC2 `t4g.nano` (`enable_dms`) | ~USD 1,5–2,5 / día |
+| QuickSight (`enable_quicksight`) | prueba gratuita de 30 días |
 
-### Consultas de ejemplo (Athena, workgroup `paylake-dev-analytics`)
-
-Publicadas como *Saved queries*: reconciliación Bronze vs Silver, motivos de cuarentena, intercambio por emisor,
-top comercios con alertas de fraude, corredores transfronterizos (ver `sql/`).
-
-### Costos y apagado
-
-Con el schedule horario el costo es de pocos USD/mes (Lambda, S3, Step Functions, Athena por consulta, 1 CMK de KMS ≈ USD 1).
-Para pausar: `./infra/command/destroy.ps1 -PauseOnly`. Para borrar todo: `./infra/command/destroy.ps1` (en `dev` los buckets se vacían solos).
+Una semana con todo encendido ronda **USD 15–20** (estimación). `aws_budgets_budget` avisa por email al 80 % de
+`monthly_budget_usd` (25 por defecto). `./infra/command/destroy.ps1 -PauseOnly` detiene la ejecución horaria.
 
 ## Decisiones de diseño
 
-- **Lambda + pandas (AWS SDK for pandas) en vez de Glue/Spark**: con este volumen (decenas de miles de filas/día) es más barato y simple. El código de transformación está aislado en funciones puras sobre DataFrames, por lo que migrarlo a Glue/EMR (PySpark) o a tablas Iceberg con `MERGE` es el paso natural al escalar.
-- **Ventana de reproceso (`lookback_days`)**: Silver/Gold se recalculan sobre los últimos N días con `overwrite_partitions`; sólo se reescriben fechas completamente cubiertas por la ventana para que los datos tardíos no borren particiones antiguas.
-- **El extracto core es carga completa**: siempre se procesa el último snapshot y reescribe sólo sus particiones (`source_system=core_snapshot`), sin tocar las del flujo en línea.
-- **Partition projection** en Bronze: Athena consulta los JSON crudos sin crawlers.
-- **Bronze conserva todo como string**: el dato se guarda tal como llegó; el tipado y las reglas viven en Silver y son auditables por la cuarentena.
-- **Precision de las reglas es baja a propósito**: la tabla `fraud_rule_performance` deja medir y mejorar reglas con datos etiquetados, que es como se calibra un motor de fraude real.
+- **Lambda + pandas para el pipeline horario, Glue/Spark para la analítica diaria**: con este volumen Lambda es más barato
+  y simple; el job de Glue muestra el camino de escala sobre la misma capa Silver.
+- **DMS tiene prioridad sobre el extracto JSON**: ambas son la misma fuente (`source_system=core`) por distinto canal;
+  Silver aplica los cambios CDC (`Op` I/U/D, gana el último `dms_ts`).
+- **Idempotencia**: Silver y Gold se recalculan por ventana con `overwrite_partitions`; reprocesar da el mismo resultado (tests).
+- **Lake Formation sobre Silver/Gold, IAM sobre Bronze**: los humanos nunca consultan Bronze, así que basta IAM; las capas
+  consultables se gobiernan por etiquetas y heredan permisos al crear tablas nuevas.
+- **CloudFormation para el bootstrap, Terraform para el resto**: Terraform no puede crear el bucket donde guarda su estado.
+- **Las reglas de fraude tienen baja precisión a propósito**: `fraud_rule_performance` permite medirlas y calibrarlas con
+  datos etiquetados, como se hace con un motor de fraude real.

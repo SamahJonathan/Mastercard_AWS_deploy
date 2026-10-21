@@ -2,7 +2,8 @@
 
 Hay un adaptador por fuente que lleva su esquema al modelo canónico (SILVER_COLUMNS):
   - simulator      : autorizaciones en línea enviadas por adquirentes (JSON lines, con PAN)
-  - core_snapshot  : extracto completo del sistema core (JSON anidado en español, ya tokenizado)
+  - core           : sistema core bancario (español, ya tokenizado). Llega como extracto JSON completo
+                     o replicado con AWS DMS (full load + CDC) desde PostgreSQL
 Los registros que no pasan las reglas no se pierden: van a la tabla de cuarentena con el motivo.
 """
 from __future__ import annotations
@@ -127,14 +128,17 @@ def transform(raw: list[dict], pan_secret: str) -> tuple[pd.DataFrame, pd.DataFr
     return _finalize(ok, metrics), quarantine, metrics
 
 
-# --- Fuente 2: extracto del sistema core (sample_data/mastercard_db_ficticia.json) -----------
+# --- Fuente 2: sistema core (sample_data/mastercard_db_ficticia.json o réplica DMS) ----------
 
 ENTRY_MODE_MAP = {"contactless": "CONTACTLESS", "online": "ECOMMERCE", "chip": "CHIP", "banda": "MAGSTRIPE"}
 
 
-def transform_core_snapshot(snapshot: dict, source_file: str, ingest_ts: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def transform_core_snapshot(
+    snapshot: dict, source_file: str, ingest_ts: str, channel: str = "file_snapshot"
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """channel indica cómo llegó el dato: 'file_snapshot' (extracto JSON) o 'dms_cdc' (réplica DMS)."""
     txns = snapshot.get("transacciones") or []
-    metrics = {"source_system": "core_snapshot", "bronze_records": len(txns)}
+    metrics = {"source_system": "core", "channel": channel, "bronze_records": len(txns)}
     if not txns:
         return (*_empty(), metrics)
 
@@ -154,8 +158,8 @@ def transform_core_snapshot(snapshot: dict, source_file: str, ingest_ts: str) ->
         "codigo_respuesta": "response_code", "fraude_confirmado": "fraud_confirmed", "contracargo": "chargeback",
     })
     df["_raw"] = [json.dumps(t, ensure_ascii=False) for t in txns]
-    df["_source_file"], df["_ingest_ts"], df["_batch_id"] = source_file, ingest_ts, "core_snapshot"
-    df["source_system"] = "core_snapshot"
+    df["_source_file"], df["_ingest_ts"], df["_batch_id"] = source_file, ingest_ts, channel
+    df["source_system"] = "core"
     df = _dedupe(df, metrics)
 
     df["amount_num"] = pd.to_numeric(df["amount"].map(parse_amount), errors="coerce")
@@ -204,3 +208,48 @@ def reconcile_core_snapshot(snapshot: dict, silver_core: pd.DataFrame) -> pd.Dat
         rows.append({"metric": metric, "reported": rep, "computed": value, "diff": diff,
                      "status": "OK" if ok else ("MISSING" if rep is None else "MISMATCH")})
     return pd.DataFrame(rows)
+
+
+# --- Réplica DMS -> mismo formato que el extracto --------------------------------------------
+
+DMS_PRIMARY_KEYS = {
+    "emisores": "emisor_id",
+    "adquirentes": "adquirente_id",
+    "comercios": "comercio_id",
+    "tarjetas": "token_tarjeta",
+    "transacciones": "transaccion_id",
+}
+
+
+def _plain(value):
+    """Convierte tipos de pandas/numpy/Decimal a tipos JSON nativos (NA -> None)."""
+    if value is None or (not isinstance(value, (str, bytes)) and pd.isna(value)):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+    if hasattr(value, "item"):  # numpy scalar
+        return value.item()
+    if type(value).__name__ == "Decimal":
+        return float(value)
+    return value
+
+
+def dms_to_snapshot(tables: dict[str, pd.DataFrame]) -> dict:
+    """Aplica full load + CDC de DMS: por clave primaria gana el último cambio (dms_ts); 'D' elimina.
+
+    DMS escribe una columna Op (I/U/D) y una marca de tiempo dms_ts en cada archivo Parquet.
+    """
+    snapshot: dict = {"metadata": {"origen": "aws_dms"}}
+    for table, pk in DMS_PRIMARY_KEYS.items():
+        df = tables.get(table)
+        if df is None or df.empty:
+            snapshot[table] = []
+            continue
+        if "dms_ts" in df:
+            df = df.sort_values("dms_ts", kind="stable")
+        df = df.drop_duplicates(subset=[pk], keep="last")
+        if "Op" in df:
+            df = df[df["Op"] != "D"]
+        df = df.drop(columns=[c for c in ("Op", "dms_ts", "actualizado_en") if c in df])
+        snapshot[table] = [{k: _plain(v) for k, v in rec.items()} for rec in df.to_dict("records")]
+    return snapshot

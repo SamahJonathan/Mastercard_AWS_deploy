@@ -81,4 +81,8 @@ if ($RunPipeline) {
     if ($status -ne "SUCCEEDED") { throw "El pipeline terminó en $status" }
 }
 
+Step "Comprobaciones de IAM (lo permitido y lo que debe quedar denegado)"
+& "$PSScriptRoot/check_iam.ps1"
+if ($LASTEXITCODE -ne 0) { throw "Las comprobaciones de IAM no coinciden con lo esperado" }
+
 Write-Host "`nListo. API: $(terraform "-chdir=$Platform" output -raw api_url)" -ForegroundColor Green

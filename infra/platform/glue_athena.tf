@@ -1,8 +1,22 @@
 # Catálogo: una base por capa. Las tablas Silver/Gold las registra el pipeline (awswrangler) al escribir;
 # la tabla Bronze se define aquí sobre los JSON crudos usando partition projection (sin crawlers).
+# Silver y Gold quedan gobernadas por Lake Formation (sin IAM_ALLOWED_PRINCIPALS, ver lakeformation.tf);
+# Bronze sigue protegida sólo por IAM, porque ningún analista la consulta.
 resource "aws_glue_catalog_database" "layer" {
   for_each = toset(["bronze", "silver", "gold"])
   name     = "${local.db_prefix}_${each.key}"
+
+  dynamic "create_table_default_permission" {
+    for_each = each.key == "bronze" ? [1] : []
+    content {
+      permissions = ["ALL"]
+      principal {
+        data_lake_principal_identifier = "IAM_ALLOWED_PRINCIPALS"
+      }
+    }
+  }
+
+  depends_on = [aws_lakeformation_data_lake_settings.this]
 }
 
 resource "aws_glue_catalog_table" "bronze_transactions" {
@@ -69,8 +83,8 @@ resource "aws_athena_workgroup" "analytics" {
 }
 
 resource "aws_athena_named_query" "query" {
-  for_each  = fileset("${path.module}/../../sql", "*.sql")
-  name      = trimsuffix(each.value, ".sql")
+  for_each  = fileset("${path.module}/../../sql", "**/*.sql")
+  name      = replace(trimsuffix(each.value, ".sql"), "/", "_")
   workgroup = aws_athena_workgroup.analytics.id
   database  = aws_glue_catalog_database.layer["gold"].name
   query = templatefile("${path.module}/../../sql/${each.value}", {

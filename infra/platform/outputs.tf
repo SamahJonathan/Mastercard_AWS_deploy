@@ -24,14 +24,40 @@ output "api_key" {
 }
 
 output "analyst_role_arn" {
-  value = aws_iam_role.analyst.arn
+  value = module.role["analyst"].arn
 }
 
 output "partner_roles" {
   description = "Rol y ExternalId que se le entregaría a cada emisor"
-  value = { for k, r in aws_iam_role.partner : k => {
-    role_arn    = r.arn
-    external_id = random_password.partner_external_id[k].result
+  value = { for issuer in var.partner_issuers : issuer => {
+    role_arn    = module.role["partner-${lower(issuer)}"].arn
+    external_id = random_password.partner_external_id[issuer].result
   } }
   sensitive = true
+}
+
+output "risk_analyst_role_arn" {
+  value = module.role["risk-analyst"].arn
+}
+
+output "cloudwatch_dashboard_url" {
+  value = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.pipeline.dashboard_name}"
+}
+
+output "glue_job_name" {
+  value = aws_glue_job.gold_card_analytics.name
+}
+
+output "core_db_endpoint" {
+  description = "PostgreSQL del core bancario (privado; accesible desde la EC2 de carga vía SSM)"
+  value       = one(aws_db_instance.core[*].address)
+}
+
+output "core_loader_instance_id" {
+  description = "Conectarse con: aws ssm start-session --target <id>"
+  value       = one(aws_instance.loader[*].id)
+}
+
+output "dms_task_arn" {
+  value = one(aws_dms_replication_task.core_to_bronze[*].replication_task_arn)
 }

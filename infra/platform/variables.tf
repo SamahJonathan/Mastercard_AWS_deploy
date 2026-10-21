@@ -58,3 +58,60 @@ variable "core_snapshot_ingest_date" {
   type        = string
   default     = "2026-10-21"
 }
+
+# --- Piezas opcionales (con costo por hora) ---------------------------------------------------
+
+variable "enable_dms" {
+  description = "Core bancario en RDS PostgreSQL + EC2 de carga + replicación AWS DMS (full load + CDC) hacia Bronze"
+  type        = bool
+  default     = true
+}
+
+variable "create_dms_service_roles" {
+  description = "Crear los roles de servicio dms-vpc-role y dms-cloudwatch-logs-role (false si la cuenta ya los tiene)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_quicksight" {
+  description = "Crea data source y datasets de QuickSight (requiere suscripción a QuickSight y quicksight_user_arn)"
+  type        = bool
+  default     = false
+}
+
+variable "quicksight_user_arn" {
+  description = "ARN del usuario QuickSight dueño de los recursos, p.ej. arn:aws:quicksight:sa-east-1:123456789012:user/default/admin"
+  type        = string
+  default     = ""
+}
+
+variable "enable_cloudtrail" {
+  type    = bool
+  default = true
+}
+
+# --- Gobierno y observabilidad -----------------------------------------------------------------
+
+variable "lakeformation_admin_arns" {
+  description = "Principales IAM (además del rol de despliegue de GitHub) que administran Lake Formation"
+  type        = list(string)
+  default     = []
+}
+
+variable "alert_email" {
+  description = "Correo que recibe alarmas y alertas de presupuesto (vacío = sin suscripción)"
+  type        = string
+  default     = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Presupuesto mensual; avisa al 80 % real y al 100 % pronosticado"
+  type        = number
+  default     = 25
+}
+
+variable "glue_schedule" {
+  description = "Cron del job de Glue (UTC)"
+  type        = string
+  default     = "cron(0 6 * * ? *)"
+}

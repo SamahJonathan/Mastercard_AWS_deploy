@@ -15,7 +15,7 @@ def test_core_snapshot_maps_to_canonical_model():
     assert len(out) == len(SNAPSHOT["transacciones"]) and q.empty
     assert set(out["entry_mode"]) <= {"CHIP", "CONTACTLESS", "ECOMMERCE", "MAGSTRIPE"}
     assert out["issuer_name"].notna().all() and out["merchant_name"].notna().all()
-    assert (out["source_system"] == "core_snapshot").all()
+    assert (out["source_system"] == "core").all()
 
 
 def test_core_snapshot_reconciles_with_reported_metrics():

@@ -67,6 +67,28 @@ def _latest_core_snapshot(st: Settings) -> tuple[str, str] | None:
     return latest, ingest_date
 
 
+def _load_core(st: Settings) -> tuple[dict, str, str, str] | None:
+    """Fuente core: si existe la réplica DMS (full load + CDC) tiene prioridad sobre el extracto JSON.
+
+    Devuelve (snapshot, source_file, ingest_ts, channel).
+    """
+    dms_root = f"{st.bronze_root}/dms/core"
+    files = storage.list_files(dms_root, ".parquet")
+    if files:
+        by_table: dict[str, list[str]] = {}
+        for f in files:
+            table = f.replace("\\", "/").split("/")[-2]
+            by_table.setdefault(table, []).append(f)
+        tables = {t: storage.read_parquet_files(paths) for t, paths in by_table.items()}
+        snapshot = silver.dms_to_snapshot(tables)
+        return snapshot, dms_root, datetime.now(timezone.utc).isoformat(), "dms_cdc"
+    latest = _latest_core_snapshot(st)
+    if latest:
+        path, ingest_date = latest
+        return json.loads(storage.read_text(path)), path, ingest_date, "file_snapshot"
+    return None
+
+
 def bronze_to_silver(ref_date: date | None = None, settings: Settings | None = None) -> dict:
     st = settings or get_settings()
     ref_date = ref_date or datetime.now(timezone.utc).date()
@@ -88,17 +110,17 @@ def bronze_to_silver(ref_date: date | None = None, settings: Settings | None = N
     quarantines.append(quarantine)
     result["sources"].append({**metrics, "silver_written": len(clean)})
 
-    # Fuente 2: extracto core (carga completa del último snapshot)
-    latest = _latest_core_snapshot(st)
-    if latest:
-        path, ingest_date = latest
-        snapshot = json.loads(storage.read_text(path))
-        core, core_q, core_metrics = silver.transform_core_snapshot(snapshot, path, ingest_date)
+    # Fuente 2: sistema core (réplica DMS o extracto JSON; ambas son cargas completas)
+    loaded = _load_core(st)
+    if loaded:
+        snapshot, path, ingest_ts, channel = loaded
+        core, core_q, core_metrics = silver.transform_core_snapshot(snapshot, path, ingest_ts, channel)
         storage.write_parquet(core, silver_tx, ["source_system", "txn_date"], st.glue_db_silver, "transactions")
         quarantines.append(core_q)
-        recon = silver.reconcile_core_snapshot(snapshot, core).assign(source_file=path, checked_at=datetime.now(timezone.utc).isoformat())
-        storage.write_parquet(recon, f"{st.silver_root}/dq_source_reconciliation", None, st.glue_db_silver, "dq_source_reconciliation")
-        core_metrics["reconciliation"] = dict(zip(recon["metric"], recon["status"]))
+        if "metricas_resumen" in snapshot:  # sólo el extracto declara totales de control
+            recon = silver.reconcile_core_snapshot(snapshot, core).assign(source_file=path, checked_at=datetime.now(timezone.utc).isoformat())
+            storage.write_parquet(recon, f"{st.silver_root}/dq_source_reconciliation", None, st.glue_db_silver, "dq_source_reconciliation")
+            core_metrics["reconciliation"] = dict(zip(recon["metric"], recon["status"]))
         result["sources"].append({**core_metrics, "silver_written": len(core)})
 
     non_empty = [q for q in quarantines if not q.empty]
@@ -119,7 +141,7 @@ def silver_to_gold(ref_date: date | None = None, settings: Settings | None = Non
     ref_date = ref_date or datetime.now(timezone.utc).date()
     silver_tx = f"{st.silver_root}/transactions"
     # Fechas a recalcular: la ventana del flujo en línea + los días que cubre el extracto core
-    core_dates = storage.list_partitions(f"{silver_tx}/source_system=core_snapshot", "txn_date")
+    core_dates = storage.list_partitions(f"{silver_tx}/source_system=core", "txn_date")
     dates = sorted(set(_window(ref_date, st.lookback_days)) | set(core_dates))
     s = storage.read_parquet(silver_tx, "txn_date", dates)
     if s.empty:

@@ -95,6 +95,17 @@ def read_parquet(table_path: str, partition_key: str | None = None, values: list
     return df
 
 
+def read_parquet_files(paths: list[str]) -> pd.DataFrame:
+    """Lee una lista explícita de archivos Parquet (p.ej. los que escribe DMS: LOAD*.parquet + CDC)."""
+    if not paths:
+        return pd.DataFrame()
+    if _is_s3(paths[0]):
+        import awswrangler as wr
+
+        return wr.s3.read_parquet(path=paths)
+    return pd.concat([pd.read_parquet(p) for p in paths], ignore_index=True)
+
+
 def write_parquet(
     df: pd.DataFrame,
     table_path: str,

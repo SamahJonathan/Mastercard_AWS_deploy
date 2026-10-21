@@ -35,42 +35,6 @@ locals {
   }
 }
 
-data "aws_iam_policy_document" "sfn_trust" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["states.amazonaws.com"]
-    }
-  }
-}
-
-data "aws_iam_policy_document" "sfn" {
-  statement {
-    actions   = ["lambda:InvokeFunction"]
-    resources = [for k in ["ingest", "bronze-to-silver", "silver-to-gold"] : aws_lambda_function.fn[k].arn]
-  }
-  statement {
-    # La entrega de logs de Step Functions requiere estos permisos a nivel de cuenta
-    actions = [
-      "logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery",
-      "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups",
-    ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role" "sfn" {
-  name               = "${local.name}-pipeline-sfn"
-  assume_role_policy = data.aws_iam_policy_document.sfn_trust.json
-}
-
-resource "aws_iam_role_policy" "sfn" {
-  name   = "invoke-stages"
-  role   = aws_iam_role.sfn.id
-  policy = data.aws_iam_policy_document.sfn.json
-}
-
 resource "aws_cloudwatch_log_group" "sfn" {
   name              = "/aws/vendedlogs/states/${local.name}-pipeline"
   retention_in_days = 14
@@ -78,7 +42,7 @@ resource "aws_cloudwatch_log_group" "sfn" {
 
 resource "aws_sfn_state_machine" "pipeline" {
   name       = "${local.name}-pipeline"
-  role_arn   = aws_iam_role.sfn.arn
+  role_arn   = module.role["pipeline-sfn"].arn
   definition = jsonencode(local.definition)
 
   logging_configuration {
@@ -90,34 +54,6 @@ resource "aws_sfn_state_machine" "pipeline" {
 
 # --- Agenda --------------------------------------------------------------------------------
 
-data "aws_iam_policy_document" "scheduler_trust" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["scheduler.amazonaws.com"]
-    }
-  }
-}
-
-data "aws_iam_policy_document" "scheduler" {
-  statement {
-    actions   = ["states:StartExecution"]
-    resources = [aws_sfn_state_machine.pipeline.arn]
-  }
-}
-
-resource "aws_iam_role" "scheduler" {
-  name               = "${local.name}-scheduler"
-  assume_role_policy = data.aws_iam_policy_document.scheduler_trust.json
-}
-
-resource "aws_iam_role_policy" "scheduler" {
-  name   = "start-pipeline"
-  role   = aws_iam_role.scheduler.id
-  policy = data.aws_iam_policy_document.scheduler.json
-}
-
 resource "aws_scheduler_schedule" "pipeline" {
   name                = "${local.name}-hourly"
   schedule_expression = var.schedule_expression
@@ -127,7 +63,7 @@ resource "aws_scheduler_schedule" "pipeline" {
 
   target {
     arn      = aws_sfn_state_machine.pipeline.arn
-    role_arn = aws_iam_role.scheduler.arn
+    role_arn = module.role["scheduler"].arn
     input    = jsonencode({ generate = true })
   }
 }
@@ -145,4 +81,5 @@ resource "aws_cloudwatch_metric_alarm" "pipeline_failed" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
 }

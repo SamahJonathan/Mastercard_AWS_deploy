@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Payments Lakehouse - bootstrap. Se despliega UNA vez con AWS CloudFormation (antes que Terraform):
+  bucket del estado remoto de Terraform, proveedor OIDC de GitHub y rol de despliegue sin access keys.
+  Va en CloudFormation porque Terraform no puede crear el bucket donde guarda su propio estado.
+
+Parameters:
+  Project:
+    Type: String
+    Default: paylake
+    AllowedPattern: "[a-z][a-z0-9-]{2,20}"
+  GithubRepo:
+    Type: String
+    Description: Repositorio en formato owner/nombre
+    Default: SamahJonathan/Mastercard_AWS_deploy
+  CreateOidcProvider:
+    Type: String
+    Description: "false si la cuenta ya tiene el proveedor token.actions.githubusercontent.com"
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+Conditions:
+  CreateOidc: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  StateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${Project}-tfstate-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  StateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt StateBucket.Arn
+              - !Sub "${StateBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # Techo de permisos de TODOS los roles de carga de trabajo. Aunque una política les dé más,
+  # nunca pueden superar esto. Y no incluye IAM: ningún rol del proyecto puede crear identidades.
+  WorkloadBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Project}-workload-boundary"
+      Description: Limite maximo de permisos para los roles del proyecto (permissions boundary)
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ProjectData
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+              - s3:PutObjectTagging
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource:
+              - !Sub "arn:aws:s3:::${Project}-*"
+              - !Sub "arn:aws:s3:::${Project}-*/*"
+          - Sid: DataServices
+            Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              - glue:Get*
+              - glue:CreateTable
+              - glue:UpdateTable
+              - glue:DeleteTable
+              - glue:CreatePartition
+              - glue:BatchCreatePartition
+              - glue:UpdatePartition
+              - glue:DeletePartition
+              - glue:BatchDeletePartition
+              - glue:PublishDataQuality
+              - lakeformation:GetDataAccess
+              - athena:StartQueryExecution
+              - athena:StopQueryExecution
+              - athena:Get*
+              - athena:List*
+              - lambda:InvokeFunction
+              - states:StartExecution
+              - ssm:GetParameter
+            Resource: "*"
+          - Sid: Observability
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:Describe*
+              - logs:CreateLogDelivery
+              - logs:GetLogDelivery
+              - logs:UpdateLogDelivery
+              - logs:DeleteLogDelivery
+              - logs:ListLogDeliveries
+              - logs:PutResourcePolicy
+              - cloudwatch:PutMetricData
+              - xray:PutTraceSegments
+              - xray:PutTelemetryRecords
+            Resource: "*"
+          - Sid: SessionManagerAndDmsNetworking
+            Effect: Allow
+            Action:
+              - ssm:UpdateInstanceInformation
+              - ssmmessages:CreateControlChannel
+              - ssmmessages:CreateDataChannel
+              - ssmmessages:OpenControlChannel
+              - ssmmessages:OpenDataChannel
+              - ec2:Describe*
+              - ec2:CreateNetworkInterface
+              - ec2:DeleteNetworkInterface
+              - ec2:ModifyNetworkInterfaceAttribute
+            Resource: "*"
+          - Sid: NeverIdentityOrAccount
+            Effect: Deny
+            Action:
+              - "iam:*"
+              - "organizations:*"
+              - "account:*"
+            Resource: "*"
+
+  GithubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Project}-github-deploy"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidc
+                - !Ref GithubOidcProvider
+                - !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # Sólo la rama main o el environment "prod" de ESTE repositorio
+              StringLike:
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GithubRepo}:ref:refs/heads/main"
+                  - !Sub "repo:${GithubRepo}:environment:prod"
+      Policies:
+        - PolicyName: terraform-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: TerraformState
+                Effect: Allow
+                Action: [s3:ListBucket, s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource:
+                  - !GetAtt StateBucket.Arn
+                  - !Sub "${StateBucket.Arn}/*"
+              - Sid: ProjectBuckets
+                Effect: Allow
+                Action: "s3:*"
+                Resource:
+                  - !Sub "arn:aws:s3:::${Project}-*"
+                  - !Sub "arn:aws:s3:::${Project}-*/*"
+              - Sid: ManagedServices
+                Effect: Allow
+                Action:
+                  - "lambda:*"
+                  - "glue:*"
+                  - "athena:*"
+                  - "states:*"
+                  - "scheduler:*"
+                  - "events:*"
+                  - "apigateway:*"
+                  - "logs:*"
+                  - "kms:*"
+                  - "ssm:*"
+                  - "cloudwatch:*"
+                  - "sns:*"
+                  - "ec2:*"
+                  - "rds:*"
+                  - "dms:*"
+                  - "cloudtrail:*"
+                  - "lakeformation:*"
+                  - "quicksight:*"
+                  - "budgets:*"
+                  - "xray:*"
+                Resource: "*"
+              # Crear o cambiar permisos de un rol SOLO si lleva el boundary: no puede fabricarse un administrador
+              - Sid: ProjectRolesOnlyWithBoundary
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePermissionsBoundary
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${Project}-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/dms-vpc-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/dms-cloudwatch-logs-role"
+                Condition:
+                  StringEquals:
+                    iam:PermissionsBoundary: !Ref WorkloadBoundary
+              - Sid: ProjectRolesManage
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:UpdateRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PassRole
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:GetRolePolicy
+                  - iam:ListInstanceProfilesForRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${Project}-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/dms-vpc-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/dms-cloudwatch-logs-role"
+              - Sid: NeverRemoveBoundary
+                Effect: Deny
+                Action: iam:DeleteRolePermissionsBoundary
+                Resource: "*"
+              - Sid: NeverTouchBoundaryPolicy
+                Effect: Deny
+                Action:
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicy
+                  - iam:DeletePolicyVersion
+                  - iam:SetDefaultPolicyVersion
+                Resource: !Ref WorkloadBoundary
+              - Sid: NeverModifyItself
+                Effect: Deny
+                Action:
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRole
+                  - iam:UpdateRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Project}-github-deploy"
+              - Sid: ProjectInstanceProfiles
+                Effect: Allow
+                Action:
+                  - iam:GetInstanceProfile
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:TagInstanceProfile
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:instance-profile/${Project}-*"
+              - Sid: ServiceLinkedRoles
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: "*"
+                Condition:
+                  StringLike:
+                    iam:AWSServiceName:
+                      - rds.amazonaws.com
+                      - dms.amazonaws.com
+                      - lakeformation.amazonaws.com
+                      - quicksight.amazonaws.com
+              - Sid: ReadOnlyIdentity
+                Effect: Allow
+                Action: [iam:GetPolicy, iam:GetPolicyVersion, iam:ListRoles, sts:GetCallerIdentity]
+                Resource: "*"
+
+Outputs:
+  WorkloadBoundaryArn:
+    Value: !Ref WorkloadBoundary
+  StateBucket:
+    Value: !Ref StateBucket
+  GithubDeployRoleArn:
+    Description: Variable AWS_DEPLOY_ROLE_ARN del repositorio en GitHub
+    Value: !GetAtt GithubDeployRole.Arn

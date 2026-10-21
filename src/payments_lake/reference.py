@@ -37,7 +37,7 @@ COUNTRY_CURRENCY = {
 
 # Tipos de cambio ficticios: 1 unidad de moneda local = X USD
 FX_TO_USD = {
-    "CLP": 0.00105, "ARS": 0.00095, "BRL": 0.18, "PEN": 0.27,
+    "CLP": 0.00105, "ARS": 0.001, "BRL": 0.18, "PEN": 0.27,
     "COP": 0.00025, "MXN": 0.055, "USD": 1.0, "EUR": 1.08,
 }
 

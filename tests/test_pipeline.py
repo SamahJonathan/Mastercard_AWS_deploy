@@ -31,7 +31,7 @@ def test_end_to_end_both_sources_is_idempotent(tmp_path):
 
     written = _written(first)
     assert written == _written(second)
-    assert written["simulator"] > 0 and written["core_snapshot"] == 1500
+    assert written["simulator"] > 0 and written["core"] == 1500
     assert len(storage.read_parquet(f"{st.silver_root}/transactions")) == sum(written.values())
     assert gold1 == gold2
     assert gold1["dates"][0] == "2026-09-01"  # gold también cubre el mes del extracto core

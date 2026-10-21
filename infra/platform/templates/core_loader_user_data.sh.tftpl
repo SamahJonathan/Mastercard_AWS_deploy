@@ -1,0 +1,50 @@
+#!/bin/bash
+# Arranque de la EC2 de carga: instala el cliente de PostgreSQL, carga el core bancario
+# y programa actividad nueva cada 15 minutos para que DMS la replique como CDC.
+set -euxo pipefail
+
+dnf install -y postgresql15
+
+mkdir -p /opt/corebank
+cd /opt/corebank
+aws s3 cp "s3://${artifacts_bucket}/${loader_key}" load_core_db.py --region "${region}"
+aws s3 cp "s3://${bronze_bucket}/${snapshot_key}" snapshot.json --region "${region}"
+
+cat > /opt/corebank/env.sh <<'ENV'
+export PGHOST="${db_host}"
+export PGPORT=5432
+export PGDATABASE="${db_name}"
+export PGUSER="${db_user}"
+export PGSSLMODE=require
+export PGPASSWORD="$(aws ssm get-parameter --name '${db_password_param}' --with-decryption --query Parameter.Value --output text --region '${region}')"
+ENV
+chmod 600 /opt/corebank/env.sh
+
+source /opt/corebank/env.sh
+until pg_isready -h "$PGHOST" -p 5432; do sleep 10; done
+python3 load_core_db.py init snapshot.json | psql -v ON_ERROR_STOP=1
+
+cat > /etc/systemd/system/corebank-cdc.service <<'UNIT'
+[Unit]
+Description=Simula actividad nueva en el core bancario (fuente CDC de DMS)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/corebank
+ExecStart=/bin/bash -c 'source /opt/corebank/env.sh && python3 load_core_db.py cdc snapshot.json --new 25 | psql -v ON_ERROR_STOP=1'
+UNIT
+
+cat > /etc/systemd/system/corebank-cdc.timer <<'UNIT'
+[Unit]
+Description=Cada 15 minutos
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now corebank-cdc.timer

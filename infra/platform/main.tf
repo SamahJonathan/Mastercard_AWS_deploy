@@ -5,7 +5,7 @@ locals {
   account_id = data.aws_caller_identity.current.account_id
   db_prefix  = replace(local.name, "-", "_")
 
-  layers = ["bronze", "silver", "gold", "exchange", "athena-results"]
+  layers = ["bronze", "silver", "gold", "exchange", "athena-results", "artifacts"]
 }
 
 # --- Cifrado ---------------------------------------------------------------------------------

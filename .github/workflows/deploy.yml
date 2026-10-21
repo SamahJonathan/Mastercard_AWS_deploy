@@ -4,12 +4,15 @@ name: Deploy
 # Ejecuta lo mismo que infra/command/deploy.ps1 (versión local).
 # Requiere en Settings > Secrets and variables > Actions > Variables:
 #   AWS_DEPLOY_ROLE_ARN  (output github_deploy_role_arn del stack bootstrap)
-#   TF_STATE_BUCKET      (output state_bucket del stack bootstrap)
+#   TF_STATE_BUCKET      (output StateBucket del stack bootstrap)
+#   LF_ADMIN_ARNS        (administradores de Lake Formation, p.ej. ["arn:aws:iam::123:user/admin"])
+# Opcionales: ALERT_EMAIL, ENABLE_DMS (true/false), ENABLE_QUICKSIGHT, QUICKSIGHT_USER_ARN
+# (bootstrap.ps1 crea las obligatorias)
 
 on:
   push:
     branches: [main]
-    paths: ["src/**", "infra/platform/**", "sql/**", ".github/workflows/deploy.yml"]
+    paths: ["src/**", "infra/platform/**", "sql/**", "glue/**", "scripts/**", "sample_data/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
     inputs:
       run_pipeline:
@@ -27,6 +30,11 @@ concurrency:
 
 env:
   AWS_REGION: sa-east-1
+  TF_VAR_lakeformation_admin_arns: ${{ vars.LF_ADMIN_ARNS || '[]' }}
+  TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+  TF_VAR_enable_dms: ${{ vars.ENABLE_DMS || 'true' }}
+  TF_VAR_enable_quicksight: ${{ vars.ENABLE_QUICKSIGHT || 'false' }}
+  TF_VAR_quicksight_user_arn: ${{ vars.QUICKSIGHT_USER_ARN }}
 
 jobs:
   test:

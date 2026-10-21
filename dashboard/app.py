@@ -75,7 +75,7 @@ if not alerts.empty:
     st.dataframe(alerts.sort_values("risk_score", ascending=False), use_container_width=True, hide_index=True)
 
 st.subheader("Desempeño de reglas de fraude vs. fraudes confirmados")
-st.caption("Calculado sobre las transacciones con etiqueta (fuente core_snapshot). Todas las fechas.")
+st.caption("Calculado sobre las transacciones con etiqueta (fuente core). Todas las fechas.")
 perf = load("fraud_rule_performance")
 if not perf.empty:
     st.dataframe(perf, use_container_width=True, hide_index=True)

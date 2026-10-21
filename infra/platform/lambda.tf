@@ -14,13 +14,14 @@ locals {
   bucket_uri = { for k, b in aws_s3_bucket.layer : k => "s3://${b.bucket}" }
 
   common_env = {
-    BRONZE_ROOT    = local.bucket_uri["bronze"]
-    SILVER_ROOT    = local.bucket_uri["silver"]
-    GOLD_ROOT      = local.bucket_uri["gold"]
-    EXCHANGE_ROOT  = local.bucket_uri["exchange"]
-    GLUE_DB_SILVER = aws_glue_catalog_database.layer["silver"].name
-    GLUE_DB_GOLD   = aws_glue_catalog_database.layer["gold"].name
-    LOOKBACK_DAYS  = tostring(var.lookback_days)
+    BRONZE_ROOT       = local.bucket_uri["bronze"]
+    SILVER_ROOT       = local.bucket_uri["silver"]
+    GOLD_ROOT         = local.bucket_uri["gold"]
+    EXCHANGE_ROOT     = local.bucket_uri["exchange"]
+    GLUE_DB_SILVER    = aws_glue_catalog_database.layer["silver"].name
+    GLUE_DB_GOLD      = aws_glue_catalog_database.layer["gold"].name
+    LOOKBACK_DAYS     = tostring(var.lookback_days)
+    METRICS_NAMESPACE = local.metrics_namespace
   }
 
   functions = {
@@ -60,7 +61,7 @@ resource "aws_cloudwatch_log_group" "fn" {
 resource "aws_lambda_function" "fn" {
   for_each         = local.functions
   function_name    = "${local.name}-${each.key}"
-  role             = aws_iam_role.fn[each.key].arn
+  role             = module.role[each.key].arn
   runtime          = "python3.12"
   architectures    = ["x86_64"]
   handler          = each.value.handler
