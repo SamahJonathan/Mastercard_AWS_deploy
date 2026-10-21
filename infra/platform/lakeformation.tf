@@ -114,7 +114,6 @@ locals {
   writers = {
     bronze_to_silver = { arn = module.role["bronze-to-silver"].arn, layer = "silver" }
     silver_to_gold   = { arn = module.role["silver-to-gold"].arn, layer = "gold" }
-    glue_job         = { arn = module.role["glue-gold-analytics"].arn, layer = "gold" }
   }
 }
 

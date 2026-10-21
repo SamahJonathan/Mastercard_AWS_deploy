@@ -31,6 +31,26 @@ con **IAM de mínimo privilegio** y **CI/CD en GitHub Actions vía OIDC** (sin a
 | **Observabilidad** | Dashboard CloudWatch, alarmas de calidad de datos y de seguridad, X-Ray, presupuesto, y **registro estructurado de cada despliegue** (PC y GitHub) con alarma si falla — [`docs/observabilidad-despliegues.md`](docs/observabilidad-despliegues.md) |
 | **QuickSight / Power BI** | Datasets en Terraform + guía — [`docs/quicksight.md`](docs/quicksight.md), [`docs/powerbi.md`](docs/powerbi.md), [`powerbi/`](powerbi/) |
 
+## Verificado en AWS
+
+Desplegado y probado en una cuenta real (sa-east-1, 21-10-2026). Cada prueba se ejecutó contra los recursos desplegados:
+
+| Prueba | Resultado |
+|---|---|
+| Despliegue con Terraform (197 recursos) + bootstrap con CloudFormation | ✅ |
+| Pipeline Step Functions: Ingest → Bronze → Silver → Gold | ✅ `SUCCEEDED` |
+| DMS full load + CDC desde PostgreSQL (RDS) | ✅ 1525 transacciones (1500 + 25 por CDC), updates tardíos aplicados |
+| Job de Glue (PySpark + Glue Data Quality) | ✅ `SUCCEEDED`, reglas DQ en verde |
+| Athena: 12 consultas guardadas | ✅ |
+| Lake Formation: analista lee Gold, **no** lee Silver ni Bronze | ✅ |
+| Intercambio B2B: el emisor EM001 lee sus liquidaciones, **no** las de EM005; sin ExternalId no entra | ✅ |
+| API de Gold: 5 endpoints, `401` sin API key | ✅ |
+| IAM: 25 comprobaciones con el simulador de políticas | ✅ |
+| Registro de cada despliegue en CloudWatch + S3 | ✅ incluida la causa de cada fallo |
+
+Los 9 problemas que aparecieron al desplegar por primera vez, con su causa y su corrección, están en
+[docs/antes-de-desplegar.md](docs/antes-de-desplegar.md#problemas-que-ya-aparecieron).
+
 ## Arquitectura
 
 ```mermaid

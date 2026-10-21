@@ -75,7 +75,7 @@ locals {
       }
       glue-gold-analytics = {
         enabled     = true, name = "${local.name}-glue-gold-analytics", trust = local.trust["glue"], instance_profile = false
-        description = "Job de Glue: lee Silver, escribe Gold y publica Data Quality"
+        description = "Job de Glue: lee Silver, escribe Parquet en Gold y publica Data Quality (no toca el catalogo)"
       }
       lakeformation-data-access = {
         enabled     = true, name = "${local.name}-lakeformation-data-access", trust = local.trust["lakeformation"], instance_profile = false
@@ -188,10 +188,8 @@ locals {
         { Sid = "WriteGold", Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"], Resource = [local.arn["gold"], "${local.arn["gold"]}/*"] },
         { Sid = "TempAndDqResults", Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["${local.arn["artifacts"]}/glue-temp/*", "${local.arn["artifacts"]}/dq-results/*"] },
         { Sid = "ListArtifacts", Effect = "Allow", Action = ["s3:ListBucket"], Resource = [local.arn["artifacts"]] },
-        { Sid = "CatalogGold", Effect = "Allow", Action = concat(local.glue_write_actions, ["glue:DeleteTable", "glue:GetDatabases"]), Resource = [local.glue_catalog, local.glue_db_arn["gold"], local.glue_tables["gold"], "arn:aws:glue:${var.region}:${local.account_id}:database/default"] },
         { Sid = "GlueLogs", Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"], Resource = ["${local.log_group}:/aws-glue/*"] },
         { Sid = "MetricsAndDataQuality", Effect = "Allow", Action = ["cloudwatch:PutMetricData", "glue:PublishDataQuality"], Resource = ["*"] },
-        { Sid = "LakeFormationVendedCredentials", Effect = "Allow", Action = ["lakeformation:GetDataAccess"], Resource = ["*"] },
         local.key_kms,
       ] })
       lakeformation-data-access = jsonencode({ Version = "2012-10-17", Statement = [
