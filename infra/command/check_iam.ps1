@@ -10,6 +10,9 @@
   ./infra/command/check_iam.ps1
 #>
 $ErrorActionPreference = "Stop"
+# Terminales abiertas antes de instalar el AWS CLI (p.ej. las de VS Code) no ven el PATH nuevo: se agrega
+# (sin reemplazar el actual, para no perder el .venv activado).
+$env:Path = $env:Path + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 $Root = (Resolve-Path "$PSScriptRoot/../..").Path
 $Platform = Join-Path $Root "infra/platform"
 

@@ -19,7 +19,7 @@ function Has([string]$cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContin
 
 # Terminales abiertas antes de instalar algo (p.ej. las integradas de VS Code) no ven el PATH nuevo:
 # se recarga desde el registro para esta sesión.
-$env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+$env:Path = $env:Path + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 
 # --- Herramientas locales ---
 foreach ($t in @(

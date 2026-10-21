@@ -6,6 +6,9 @@
 #>
 param([switch]$PauseOnly)
 $ErrorActionPreference = "Stop"
+# Terminales abiertas antes de instalar el AWS CLI (p.ej. las de VS Code) no ven el PATH nuevo: se agrega
+# (sin reemplazar el actual, para no perder el .venv activado).
+$env:Path = $env:Path + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 $Platform = Join-Path (Resolve-Path "$PSScriptRoot/../..").Path "infra/platform"
 
 terraform "-chdir=$Platform" init -input=false -backend-config=backend.hcl | Out-Null
