@@ -147,6 +147,7 @@ suscripción en *Manage QuickSight → Account settings*.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `aws: command not found` en la PC | el CLI no estaba instalado, o la terminal es anterior a la instalación | `winget install -e --id Amazon.AWSCLI` y abrir una terminal nueva |
+| `preflight.ps1` dice que falta `aws` recién instalado, en la terminal de VS Code | las terminales integradas heredan el `PATH` de VS Code, que se abrió antes de instalar | reiniciar VS Code, o recargar el PATH: `$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")`. `preflight.ps1` ya lo hace solo |
 | `cloudshell_admin.sh` se cortaba en silencio después de `Terraform v1.15.8` | `terraform version \| head -1` con `set -o pipefail`: `head` cierra la tubería y el script lo toma como error | corregido en el script (`ba262dc`); hacer `git pull` |
 | `apply` no dejaba escribir `yes` | `-input=false` sin un plan guardado no permite confirmar | corregido en el script (`ba262dc`) |
 | `no space left on device` al instalar el provider en CloudShell | CloudShell da 1 GB persistente en `$HOME` y el provider de AWS pesa ~800 MB | el script usa `TF_DATA_DIR=/tmp/...` (`44b7f77`); borrar clones repetidos con `rm -rf ~/Mastercard_AWS_deploy` |
