@@ -46,7 +46,7 @@ $checks = @(
     @{ id = "$name-analyst"; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "los datos sólo llegan vía Lake Formation" }
     @{ id = "$name-analyst"; action = "lakeformation:GetDataAccess"; res = "*"; expect = "allowed"; why = "credenciales temporales por tabla concedida" }
     @{ id = "$name-analyst"; action = "s3:GetObject"; res = (S3 bronze "x"); expect = "implicitDeny"; why = "ningún humano lee Bronze" }
-    @{ id = "$name-analyst"; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea identidades" }
+    @{ id = "$name-analyst"; action = "iam:CreateUser"; res = "*"; expect = "explicitDeny"; why = "el boundary niega todo IAM (prueba que el techo está aplicado)" }
     @{ id = "$name-partner-em001"; action = "s3:GetObject"; res = (S3 exchange "outbound/issuer_id=EM001/settlement_date=2026-10-21/settlement.csv"); expect = "allowed"; why = "lee SUS liquidaciones" }
     @{ id = "$name-partner-em001"; action = "s3:GetObject"; res = (S3 exchange "outbound/issuer_id=EM005/settlement_date=2026-10-21/settlement.csv"); expect = "implicitDeny"; why = "no ve las de otro banco" }
     @{ id = "$name-scheduler"; action = "states:StartExecution"; res = $sfnArn; expect = "allowed"; why = "dispara el pipeline" }

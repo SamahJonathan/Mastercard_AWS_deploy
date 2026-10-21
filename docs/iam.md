@@ -209,6 +209,10 @@ OK  paylake-github-deploy iam:UpdateAssumeRolePolicy         explicitDeny  no pu
 - `implicitDeny`: nadie lo permitió (el caso normal del mínimo privilegio).
 - `explicitDeny`: hay un `Deny` escrito que gana a cualquier `Allow`.
 
+En el primer despliegue real, `analyst → iam:CreateUser` dio `explicitDeny` y no `implicitDeny` como esperaba la
+comprobación: el `Deny` viene del **boundary**, que niega todo IAM a los roles del proyecto. La expectativa estaba
+mal, no el permiso, y de paso es la prueba de que el techo está aplicado. La comprobación ahora espera `explicitDeny`.
+
 Se ejecuta solo al final de cada `deploy.ps1`. Sale con código `0` si todo coincide.
 
 Coste: **0**. Los roles, las políticas y el simulador no cuestan dinero.
