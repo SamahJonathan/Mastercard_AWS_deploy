@@ -28,11 +28,11 @@ if ! command -v terraform >/dev/null; then
   unzip -oq /tmp/terraform.zip -d "$HOME/bin"
   export PATH="$HOME/bin:$PATH"
 fi
-terraform version | head -1
+terraform version -json | grep -o '"terraform_version":"[^"]*"' || true
 
 echo "==> Terraform: grupo paylake-admins + usuario $USER_NAME"
 terraform -chdir="$ROOT/infra/account" init -input=false
-terraform -chdir="$ROOT/infra/account" apply -input=false -var="admin_users=[\"$USER_NAME\"]"
+terraform -chdir="$ROOT/infra/account" apply -var="admin_users=[\"$USER_NAME\"]"
 
 echo "==> Access key (CLI, fuera de Terraform)"
 EXISTING=$(aws iam list-access-keys --user-name "$USER_NAME" --query 'length(AccessKeyMetadata)' --output text)
