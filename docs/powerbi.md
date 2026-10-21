@@ -25,7 +25,11 @@ deja ver Gold. Verificado en la cuenta real (21-10-2026).
    ```
 
 Requisitos de IAM que ya están en el proyecto: el rol de analista tiene `athena:GetQueryResultsStream` (el
-driver trae los resultados por streaming, puerto 444 de salida) y `lakeformation:GetDataAccess`.
+driver trae los resultados por streaming, puerto 444 de salida), las acciones de metadatos de Athena que usa el
+navegador de Power BI (`ListDataCatalogs`, `ListDatabases`, `ListTableMetadata`…) y `lakeformation:GetDataAccess`.
+En el navegador sólo aparecen las tablas de Gold: Lake Formation oculta Silver y Bronze al analista.
+
+No hace falta iniciar sesión en Power BI para trabajar en Desktop; sólo para publicar en el servicio web.
 
 ## 2. Cargar los datos
 
