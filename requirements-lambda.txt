@@ -1,0 +1,9 @@
+# Versiones EXACTAS de la capa que usan las Lambdas (AWSSDKPandas-Python312:27 = aws_sdk_pandas_version 3.16.1).
+# El CI corre los tests con estas versiones: los tests con otra versión de pandas no detectaron un bug real.
+# Si cambias aws_sdk_pandas_version en infra/platform/variables.tf, actualiza este archivo
+# (cómo ver las versiones de la capa: docs/antes-de-desplegar.md, problemas conocidos).
+pandas==3.0.2
+pyarrow==22.0.0
+numpy==2.4.4
+awswrangler==3.16.1
+pytest>=8

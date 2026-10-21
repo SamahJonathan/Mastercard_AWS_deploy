@@ -24,8 +24,19 @@ TRAVEL_WINDOW_MIN = 60
 HIGH_TICKET_ECOM_USD = 1500
 
 
+def _flag(values) -> np.ndarray:
+    """Condición como array de bool de numpy, con NA = False.
+
+    En la Lambda, awswrangler entrega Silver con tipos anulables ('string', 'boolean'): comparar con un
+    valor vacío da NA, y combinar NA con & falla ("boolean value of NA is ambiguous"). Cada condición se
+    normaliza ANTES de combinarla. Test: tests/test_gold_aws_types.py.
+    """
+    series = values if isinstance(values, pd.Series) else pd.Series(values)
+    return series.astype("boolean").fillna(False).to_numpy(dtype=bool)
+
+
 def daily_merchant_kpis(silver: pd.DataFrame) -> pd.DataFrame:
-    s = silver.assign(approved_usd=silver["amount_usd"].where(silver["is_approved"], 0.0))
+    s = silver.assign(approved_usd=silver["amount_usd"].where(_flag(silver["is_approved"]), 0.0))
     g = (
         s.groupby(["txn_date", "merchant_id", "merchant_name", "mcc", "mcc_category", "merchant_country"], as_index=False)
         .agg(
@@ -45,13 +56,13 @@ def interchange_rate(df: pd.DataFrame) -> pd.Series:
     """Tasa porcentual según producto, categoría MCC, canal y si es transfronteriza (tabla ficticia)."""
     base = df["card_product"].map({k: v[0] for k, v in ref.INTERCHANGE_BASE.items()})
     adj = df["mcc_category"].map(ref.CATEGORY_ADJ).fillna(0.0)
-    ecom = np.where(df["entry_mode"] == "ECOMMERCE", ref.ECOMMERCE_ADJ, 0.0)
-    xb = np.where(df["is_cross_border"], ref.CROSS_BORDER_ADJ, 0.0)
+    ecom = np.where(_flag(df["entry_mode"] == "ECOMMERCE"), ref.ECOMMERCE_ADJ, 0.0)
+    xb = np.where(_flag(df["is_cross_border"]), ref.CROSS_BORDER_ADJ, 0.0)
     return base + adj + ecom + xb
 
 
 def with_interchange(silver: pd.DataFrame) -> pd.DataFrame:
-    approved = silver[silver["is_approved"]].copy()
+    approved = silver[_flag(silver["is_approved"])].copy()
     fixed = approved["card_product"].map({k: v[1] for k, v in ref.INTERCHANGE_BASE.items()})
     approved["interchange_rate"] = interchange_rate(approved)
     approved["interchange_fee_usd"] = (approved["amount_usd"] * approved["interchange_rate"] + fixed).round(4)
@@ -82,23 +93,23 @@ def fraud_alerts(silver: pd.DataFrame) -> pd.DataFrame:
     prev = s.groupby("pan_token")[["event_ts", "merchant_country", "is_card_present"]].shift(1)
     minutes = (s["event_ts"] - prev["event_ts"]).dt.total_seconds() / 60
     s["impossible_travel"] = (
-        s["is_card_present"]
-        & prev["is_card_present"].fillna(False).astype(bool)
-        & (prev["merchant_country"].notna())
-        & (s["merchant_country"] != prev["merchant_country"])
-        & (minutes <= TRAVEL_WINDOW_MIN)
+        _flag(s["is_card_present"])
+        & _flag(prev["is_card_present"])
+        & _flag(prev["merchant_country"].notna())
+        & _flag(s["merchant_country"] != prev["merchant_country"])
+        & _flag(minutes <= TRAVEL_WINDOW_MIN)
     )
-    ecom = s["entry_mode"] == "ECOMMERCE"
+    ecom = _flag(s["entry_mode"] == "ECOMMERCE")
     # Regla 3: ticket alto en comercio electrónico
-    s["high_ticket_ecom"] = ecom & (s["amount_usd"] >= HIGH_TICKET_ECOM_USD)
+    s["high_ticket_ecom"] = ecom & _flag(s["amount_usd"] >= HIGH_TICKET_ECOM_USD)
     # Regla 4: compra online desde una IP de un país distinto al de la tarjeta (sólo si la fuente informa IP)
     ip = s["ip_country"] if "ip_country" in s else pd.Series(None, index=s.index, dtype="object")
-    s["ip_country_mismatch"] = ecom & ip.notna() & (ip != s["card_country"])
+    s["ip_country_mismatch"] = ecom & _flag(ip.notna()) & _flag(ip != s["card_country"])
     # Regla 5: compra online sin autenticación 3DS (sólo si la fuente informa 3DS)
     three_ds = s["is_3ds_authenticated"] if "is_3ds_authenticated" in s else pd.Series(pd.NA, index=s.index, dtype="boolean")
-    s["ecom_without_3ds"] = ecom & three_ds.astype("boolean").eq(False).fillna(False)
+    s["ecom_without_3ds"] = ecom & _flag(three_ds.astype("boolean").eq(False))
 
-    s["velocity"] = s["txn_count_10m"] >= VELOCITY_THRESHOLD
+    s["velocity"] = _flag(s["txn_count_10m"] >= VELOCITY_THRESHOLD)
     flags = s[list(RULE_WEIGHTS)].fillna(False).astype(bool)
     s["risk_score"] = np.minimum(100, sum(flags[r] * w for r, w in RULE_WEIGHTS.items()))
     s["fraud_confirmed"] = s["fraud_confirmed"].astype("boolean") if "fraud_confirmed" in s else pd.NA
@@ -119,7 +130,7 @@ def fraud_rule_performance(silver: pd.DataFrame, alerts: pd.DataFrame) -> pd.Dat
     labeled = silver[silver["fraud_confirmed"].notna()]
     if labeled.empty:
         return pd.DataFrame()
-    frauds = set(labeled.loc[labeled["fraud_confirmed"].astype(bool), "transaction_id"])
+    frauds = set(labeled.loc[_flag(labeled["fraud_confirmed"]), "transaction_id"])
     labeled_alerts = alerts[alerts["transaction_id"].isin(set(labeled["transaction_id"]))]
     rows = []
     for rule in [*RULE_WEIGHTS, "any_rule"]:
@@ -139,7 +150,7 @@ def fraud_rule_performance(silver: pd.DataFrame, alerts: pd.DataFrame) -> pd.Dat
 
 
 def cross_border_corridors(silver: pd.DataFrame) -> pd.DataFrame:
-    xb = silver[silver["is_cross_border"] & silver["is_approved"]]
+    xb = silver[_flag(silver["is_cross_border"]) & _flag(silver["is_approved"])]
     return xb.groupby(["txn_date", "card_country", "merchant_country"], as_index=False).agg(
         txn_count=("transaction_id", "count"), amount_usd=("amount_usd", "sum")
     ).round({"amount_usd": 2})

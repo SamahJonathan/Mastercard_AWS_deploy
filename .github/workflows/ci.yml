@@ -25,6 +25,18 @@ jobs:
       - name: Sintaxis del job de Glue y del loader del core
         run: python -m py_compile glue/jobs/gold_card_analytics.py scripts/core_db/load_core_db.py
 
+  lambda-compat:
+    name: tests con las versiones de la capa Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-lambda.txt
+      - run: pytest -q
+
   cloudformation:
     runs-on: ubuntu-latest
     steps:
