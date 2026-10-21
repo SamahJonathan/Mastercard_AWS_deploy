@@ -1,0 +1,3 @@
+# Copiar a backend.hcl y reemplazar con el output state_bucket del stack bootstrap
+bucket = "paylake-tfstate-123456789012"
+region = "sa-east-1"

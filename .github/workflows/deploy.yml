@@ -1,0 +1,74 @@
+name: Deploy
+
+# Despliega la plataforma en AWS usando OIDC (sin access keys guardadas en GitHub).
+# Requiere en Settings > Secrets and variables > Actions > Variables:
+#   AWS_DEPLOY_ROLE_ARN  (output github_deploy_role_arn del stack bootstrap)
+#   TF_STATE_BUCKET      (output state_bucket del stack bootstrap)
+
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "infra/platform/**", "sql/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      run_pipeline:
+        description: "Ejecutar el pipeline después de desplegar"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write # necesario para OIDC
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: sa-east-1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: prod
+    defaults:
+      run:
+        working-directory: infra/platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform init
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+      - name: Terraform apply
+        run: terraform apply -input=false tfplan
+      - name: Ejecutar pipeline (smoke test en AWS)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_pipeline
+        run: |
+          ARN=$(terraform output -raw state_machine_arn)
+          EXEC=$(aws stepfunctions start-execution --state-machine-arn "$ARN" --input '{"generate": true}' --query executionArn --output text)
+          for i in $(seq 1 60); do
+            STATUS=$(aws stepfunctions describe-execution --execution-arn "$EXEC" --query status --output text)
+            echo "status=$STATUS"; [ "$STATUS" != "RUNNING" ] && break; sleep 10
+          done
+          aws stepfunctions describe-execution --execution-arn "$EXEC" --query output --output text
+          test "$STATUS" = "SUCCEEDED"

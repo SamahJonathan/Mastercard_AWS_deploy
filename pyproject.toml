@@ -1,0 +1,9 @@
+[project]
+name = "payments-lakehouse"
+version = "1.0.0"
+description = "Ingesta e intercambio de datos de pagos con tarjeta (sintéticos) en AWS con arquitectura medallion"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
