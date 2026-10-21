@@ -1,6 +1,7 @@
 name: Deploy
 
 # Despliega la plataforma en AWS usando OIDC (sin access keys guardadas en GitHub).
+# Ejecuta lo mismo que infra/command/deploy.ps1 (versión local).
 # Requiere en Settings > Secrets and variables > Actions > Variables:
 #   AWS_DEPLOY_ROLE_ARN  (output github_deploy_role_arn del stack bootstrap)
 #   TF_STATE_BUCKET      (output state_bucket del stack bootstrap)
@@ -41,6 +42,8 @@ jobs:
 
   deploy:
     needs: test
+    # Se omite hasta ejecutar infra/command/bootstrap.ps1 (que crea esta variable)
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     environment: prod
     defaults:

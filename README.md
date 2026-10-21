@@ -70,6 +70,7 @@ src/payments_lake/      # código Python (mismo código en local y en Lambda)
 sample_data/            # extracto core ficticio (segunda fuente)
 sql/                    # consultas Athena (se publican como Named Queries)
 infra/bootstrap/        # estado remoto + OIDC GitHub + rol de despliegue
+infra/command/          # comandos que se ejecutan en cada actualización (bootstrap / deploy / destroy)
 infra/platform/         # el lakehouse completo
 dashboard/              # Streamlit + script de despliegue a Lightsail
 .github/workflows/      # CI (tests + terraform validate) y Deploy (OIDC)
@@ -96,28 +97,22 @@ Salida de ejemplo (`demo --days 3`):
 
 Requisitos: cuenta AWS, [AWS CLI](https://aws.amazon.com/cli/) configurado con un usuario/rol administrador (sólo para el bootstrap), Terraform ≥ 1.10.
 
-```bash
-# 2.1 Bootstrap (una vez): bucket de estado + OIDC GitHub + rol de despliegue
-cd infra/bootstrap
-terraform init
-terraform apply -var="github_repo=<tu-usuario>/payments-lakehouse"
+Los comandos viven en [`infra/command/`](infra/command/) (PowerShell y bash) y ejecutan lo mismo que GitHub Actions:
 
-# 2.2 Plataforma
-cd ../platform
-cp backend.hcl.example backend.hcl        # poner el output state_bucket
-terraform init -backend-config=backend.hcl
-terraform apply
+```powershell
+# 2.1 Una sola vez: estado remoto + OIDC GitHub + rol de despliegue + variables del repo en GitHub
+./infra/command/bootstrap.ps1
 
-# 2.3 Ejecutar el pipeline una vez
-aws stepfunctions start-execution --state-machine-arn "$(terraform output -raw state_machine_arn)" --input '{"generate": true}'
+# 2.2 Cada vez que se actualiza un cambio: tests -> fmt -> validate -> plan -> apply -> pipeline
+./infra/command/deploy.ps1 -RunPipeline
 
-# 2.4 Probar la API
-curl -H "x-api-key: $(terraform output -raw api_key)" "$(terraform output -raw api_url)/gold/interchange_settlement"
+# 2.3 Probar la API
+curl.exe -H "x-api-key: $(terraform -chdir=infra/platform output -raw api_key)" "$(terraform -chdir=infra/platform output -raw api_url)/gold/interchange_settlement"
 ```
 
-Desde ahí, los despliegues los hace **GitHub Actions**: en el repo, *Settings → Secrets and variables → Actions → Variables*,
-crear `AWS_DEPLOY_ROLE_ARN` y `TF_STATE_BUCKET` (outputs del bootstrap) y un *environment* `prod`. Cada push a `main` corre
-tests, `terraform plan` y `apply`; `workflow_dispatch` además ejecuta el pipeline y verifica que termine en `SUCCEEDED`.
+Desde ahí, los despliegues los hace también **GitHub Actions** (el bootstrap ya deja configuradas las variables
+`AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET` y el environment `prod`). Cada push a `main` corre tests, `terraform plan` y `apply`;
+`workflow_dispatch` además ejecuta el pipeline y verifica que termine en `SUCCEEDED`.
 
 ### Dashboard en Lightsail
 
@@ -136,7 +131,7 @@ top comercios con alertas de fraude, corredores transfronterizos (ver `sql/`).
 ### Costos y apagado
 
 Con el schedule horario el costo es de pocos USD/mes (Lambda, S3, Step Functions, Athena por consulta, 1 CMK de KMS ≈ USD 1).
-Para pausar: `terraform apply -var="schedule_enabled=false"`. Para borrar todo: `terraform destroy` (en `dev` los buckets se vacían solos).
+Para pausar: `./infra/command/destroy.ps1 -PauseOnly`. Para borrar todo: `./infra/command/destroy.ps1` (en `dev` los buckets se vacían solos).
 
 ## Decisiones de diseño
 
