@@ -30,6 +30,7 @@ y `aws_iam_user_group_membership`. Sus primos exclusivos, `aws_iam_policy_attach
 grupo, y borran lo que no declaren.
 
 Después, en tu PC: `aws configure` con esa key (región `sa-east-1`). El usuario root no se vuelve a usar.
+Paso a paso y problemas conocidos: [antes-de-desplegar.md](antes-de-desplegar.md).
 
 ## Las dos preguntas
 

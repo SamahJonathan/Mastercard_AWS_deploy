@@ -115,6 +115,8 @@ pip install -r dashboard/requirements.txt; streamlit run dashboard/app.py
 
 ## 2. Desplegar en AWS
 
+> **Primera vez:** seguir [docs/antes-de-desplegar.md](docs/antes-de-desplegar.md) (cuenta, identidad de administrador con Terraform desde CloudShell, credenciales, chequeo previo y problemas conocidos).
+
 Requisitos: AWS CLI y Terraform ≥ 1.10. La identidad de administrador también se crea con Terraform, desde
 **AWS CloudShell** (que ya está autenticado): `bash infra/command/cloudshell_admin.sh` y luego `aws configure` en tu PC.
 Todos los comandos viven en [`infra/command/`](infra/command/):

@@ -3,6 +3,8 @@
 Comandos para operar la infraestructura desde tu máquina. Ejecutan **lo mismo** que GitHub Actions
 (`.github/workflows/deploy.yml`), para que lo que pruebes en local sea lo que se despliega.
 
+> Primera vez en una cuenta nueva: [docs/antes-de-desplegar.md](../../docs/antes-de-desplegar.md).
+
 | Script | Cuándo | Qué hace |
 |---|---|---|
 | `cloudshell_admin.sh` | **Etapa 0, una vez**, en AWS CloudShell | Terraform ([`infra/account`](../account/main.tf)) crea el grupo `paylake-admins` y el usuario `admin-joony`; el CLI crea su access key (fuera del estado de Terraform) |
