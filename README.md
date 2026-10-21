@@ -94,6 +94,7 @@ glue/jobs/              # job PySpark de Glue (Data Quality + Spark SQL)
 scripts/core_db/        # carga y CDC simulado del core bancario (PostgreSQL)
 sample_data/            # extracto core ficticio
 sql/ · sql/advanced/    # consultas Athena (se publican como Named Queries)
+infra/account/          # Terraform (etapa 0, desde CloudShell): grupo paylake-admins + usuario administrador
 infra/bootstrap/        # CloudFormation: estado remoto, OIDC GitHub, rol de despliegue, boundary
 infra/platform/         # Terraform: el lakehouse completo (iam.tf concentra todas las identidades)
 infra/command/          # comandos de cada actualización: bootstrap · deploy · check_iam · destroy
@@ -114,7 +115,8 @@ pip install -r dashboard/requirements.txt; streamlit run dashboard/app.py
 
 ## 2. Desplegar en AWS
 
-Requisitos: AWS CLI configurado con un usuario administrador (sólo para el bootstrap), Terraform ≥ 1.10.
+Requisitos: AWS CLI y Terraform ≥ 1.10. La identidad de administrador también se crea con Terraform, desde
+**AWS CloudShell** (que ya está autenticado): `bash infra/command/cloudshell_admin.sh` y luego `aws configure` en tu PC.
 Todos los comandos viven en [`infra/command/`](infra/command/):
 
 ```powershell

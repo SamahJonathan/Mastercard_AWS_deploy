@@ -5,6 +5,32 @@ El límite máximo (boundary) y el rol de despliegue están en
 [`infra/bootstrap/bootstrap.yaml`](../infra/bootstrap/bootstrap.yaml).
 Las comprobaciones, en [`infra/command/check_iam.ps1`](../infra/command/check_iam.ps1).
 
+## Etapa 0: tu identidad de administrador
+
+Antes de todo hace falta **alguien** que despliegue. Es el problema del huevo y la gallina: para usar
+Terraform o el CLI desde tu PC necesitas credenciales, y eso es justo lo que hay que crear.
+
+La salida es **AWS CloudShell**, la terminal que trae la consola web. Ya está autenticada con tu sesión,
+así que desde ahí se puede correr Terraform sin ninguna clave:
+
+```bash
+git clone https://github.com/SamahJonathan/Mastercard_AWS_deploy.git
+cd Mastercard_AWS_deploy && bash infra/command/cloudshell_admin.sh
+```
+
+| Pieza | Herramienta | Por qué así |
+|---|---|---|
+| grupo `paylake-admins` + `AdministratorAccess` | Terraform ([`infra/account`](../infra/account/main.tf)) | el permiso vive en el **grupo**, como un binding: un rol, N miembros |
+| usuario `admin-joony` y su membresía | Terraform | la persona no tiene permisos propios; sólo pertenece al grupo |
+| access key | CLI (`aws iam create-access-key`) | si la creara Terraform, el secreto quedaría en texto plano en el `terraform.tfstate` |
+
+Lo mismo que en el resto del proyecto, se usan los recursos **aditivos**: `aws_iam_group_policy_attachment`
+y `aws_iam_user_group_membership`. Sus primos exclusivos, `aws_iam_policy_attachment` y
+`aws_iam_group_membership`, se adueñan de **todos** los usos de esa política o de **todos** los miembros del
+grupo, y borran lo que no declaren.
+
+Después, en tu PC: `aws configure` con esa key (región `sa-east-1`). El usuario root no se vuelve a usar.
+
 ## Las dos preguntas
 
 IAM responde siempre lo mismo: **quién** accede y **qué** puede hacer.

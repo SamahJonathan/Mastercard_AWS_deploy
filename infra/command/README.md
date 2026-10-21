@@ -5,6 +5,7 @@ Comandos para operar la infraestructura desde tu máquina. Ejecutan **lo mismo**
 
 | Script | Cuándo | Qué hace |
 |---|---|---|
+| `cloudshell_admin.sh` | **Etapa 0, una vez**, en AWS CloudShell | Terraform ([`infra/account`](../account/main.tf)) crea el grupo `paylake-admins` y el usuario `admin-joony`; el CLI crea su access key (fuera del estado de Terraform) |
 | `preflight.ps1` | **Antes del primer despliegue** | Revisa sin crear nada lo que suele bloquear: AWS CLI, credenciales (no root), versión del layer de pandas en la región, roles de DMS u OIDC ya existentes, administradores previos de Lake Formation, sesión de GitHub |
 | `bootstrap.ps1` | **Una vez**, con credenciales de administrador | Despliega con **CloudFormation** el bucket del estado remoto, OIDC GitHub→AWS, el rol de despliegue y el permissions boundary; genera `backend.hcl` / `local.auto.tfvars` y configura las variables del repo en GitHub |
 | `deploy.ps1` / `deploy.sh` | **Cada vez que cambias algo** | Credenciales → tests → `terraform fmt` → `init` + `validate` → `plan` → `apply` (con confirmación) → opcional: ejecuta el pipeline y verifica `SUCCEEDED` |

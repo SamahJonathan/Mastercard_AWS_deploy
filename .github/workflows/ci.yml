@@ -37,9 +37,12 @@ jobs:
 
   terraform:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        stack: [account, platform]
     defaults:
       run:
-        working-directory: infra/platform
+        working-directory: infra/${{ matrix.stack }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -52,4 +55,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: ShellCheck de los scripts
-        run: shellcheck infra/command/deploy.sh dashboard/deploy_lightsail.sh
+        run: shellcheck infra/command/deploy.sh infra/command/cloudshell_admin.sh dashboard/deploy_lightsail.sh
