@@ -61,6 +61,15 @@ Qué crea y por qué así: ver [docs/iam.md → Etapa 0](iam.md#etapa-0-tu-ident
 
 > El secreto se muestra **una sola vez**. No se pega en chats, tickets ni en el repositorio.
 
+### Rotar la access key (si se expuso o al terminar)
+
+Si el secreto se pegó en algún lado (chat, ticket, captura), se considera comprometido: borrarlo y crear otro.
+
+```bash
+aws iam list-access-keys --user-name admin-joony --query 'AccessKeyMetadata[].AccessKeyId' --output text   | xargs -n1 aws iam delete-access-key --user-name admin-joony --access-key-id
+aws iam create-access-key --user-name admin-joony --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text
+```
+
 ## 3. Credenciales en tu PC
 
 ```powershell
@@ -141,4 +150,5 @@ suscripción en *Manage QuickSight → Account settings*.
 | `cloudshell_admin.sh` se cortaba en silencio después de `Terraform v1.15.8` | `terraform version \| head -1` con `set -o pipefail`: `head` cierra la tubería y el script lo toma como error | corregido en el script (`ba262dc`); hacer `git pull` |
 | `apply` no dejaba escribir `yes` | `-input=false` sin un plan guardado no permite confirmar | corregido en el script (`ba262dc`) |
 | `no space left on device` al instalar el provider en CloudShell | CloudShell da 1 GB persistente en `$HOME` y el provider de AWS pesa ~800 MB | el script usa `TF_DATA_DIR=/tmp/...` (`44b7f77`); borrar clones repetidos con `rm -rf ~/Mastercard_AWS_deploy` |
+| Secreto de la access key pegado en un chat | se copió la salida completa de `cloudshell_admin.sh` | rotar la key (sección *Rotar la access key*) antes de configurarla; compartir sólo la salida de `aws sts get-caller-identity` |
 | Repositorio clonado dentro de sí mismo (`Mastercard_AWS_deploy/Mastercard_AWS_deploy`) | se ejecutó `git clone` estando ya dentro de la carpeta | partir siempre con `cd ~` (está en los comandos del paso 2) |
