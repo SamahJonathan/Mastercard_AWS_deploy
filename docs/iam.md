@@ -32,6 +32,21 @@ grupo, y borran lo que no declaren.
 Después, en tu PC: `aws configure` con esa key (región `sa-east-1`). El usuario root no se vuelve a usar.
 Paso a paso y problemas conocidos: [antes-de-desplegar.md](antes-de-desplegar.md).
 
+### Dos personas, dos identidades
+
+| Usuario | Grupo | Para qué | Permisos |
+|---|---|---|---|
+| `admin-joony` | `paylake-admins` | **desplegar y apagar** (`deploy.ps1`, `destroy.ps1`) | `AdministratorAccess`. Es el equivalente a `roles/owner`: se usa sólo para operar, con MFA |
+| `consultor-joony` | `paylake-consultores` | **consultar tablas** (Athena, Power BI) | una sola llave de datos: `sts:AssumeRole` sobre `paylake-dev-analyst`. Ese rol es el que Lake Formation deja leer: **sólo Gold**. Además puede cambiar su contraseña y gestionar su propio MFA |
+
+El consultor no tiene ningún permiso sobre datos por sí mismo: entra a la consola, **cambia de rol**
+(*Switch role*) al de analista, y desde ahí consulta. Si alguien obtiene su contraseña, lo más que puede hacer es
+leer Gold, que son datos agregados sin números de tarjeta.
+
+Se crea con `bash infra/command/cloudshell_consultor.sh` en la **misma carpeta de CloudShell** donde se corrió
+`cloudshell_admin.sh` (ahí vive el `terraform.tfstate` de `infra/account`). La contraseña de consola la crea el CLI,
+es temporal y debe cambiarse al primer ingreso.
+
 ## Las dos preguntas
 
 IAM responde siempre lo mismo: **quién** accede y **qué** puede hacer.

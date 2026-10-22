@@ -60,9 +60,22 @@ $checks = @(
     @{ id = "paylake-github-deploy"; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea usuarios ni access keys" }
 )
 
+# Consultor (infra/account): sólo si ya existe. Su única llave es ponerse el rol de analista.
+$consultant = "consultor-joony"
+$consultantArn = aws iam get-user --user-name $consultant --query User.Arn --output text 2>$null
+if ($LASTEXITCODE -eq 0 -and $consultantArn) {
+    $checks += @(
+        @{ arn = $consultantArn; id = $consultant; action = "sts:AssumeRole"; res = (Role "$name-analyst"); expect = "allowed"; why = "se pone el rol de analista (Gold)" }
+        @{ arn = $consultantArn; id = $consultant; action = "sts:AssumeRole"; res = (Role "$name-risk-analyst"); expect = "implicitDeny"; why = "no puede ponerse el de riesgo (Silver)" }
+        @{ arn = $consultantArn; id = $consultant; action = "athena:StartQueryExecution"; res = "*"; expect = "implicitDeny"; why = "sin el rol no consulta nada" }
+        @{ arn = $consultantArn; id = $consultant; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "no lee archivos directo" }
+        @{ arn = $consultantArn; id = $consultant; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea identidades" }
+    )
+}
+
 $failed = 0
 $rows = foreach ($c in $checks) {
-    $cliArgs = @("iam", "simulate-principal-policy", "--policy-source-arn", (Role $c.id), "--action-names", $c.action,
+    $cliArgs = @("iam", "simulate-principal-policy", "--policy-source-arn", ($c.arn ? $c.arn : (Role $c.id)), "--action-names", $c.action,
         "--resource-arns", $c.res, "--query", "EvaluationResults[0].EvalDecision", "--output", "text")
     if ($c.context) {
         $cliArgs += @("--context-entries", "ContextKeyName=iam:PermissionsBoundary,ContextKeyValues=$($c.context),ContextKeyType=string")

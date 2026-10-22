@@ -74,3 +74,96 @@ output "admin_user_arns" {
   description = "Úsalos como lakeformation_admin_arns (bootstrap.ps1 lo hace solo)"
   value       = { for k, u in aws_iam_user.admin : k => u.arn }
 }
+
+# =================================================================================================
+#  Consultores: sólo consultan tablas. Una identidad por propósito: el administrador despliega,
+#  el consultor consulta.
+#
+#  El consultor NO recibe permisos sobre datos. Su única llave es ponerse el rol de analista
+#  (paylake-dev-analyst, definido en infra/platform/iam.tf), y es ese rol el que Lake Formation deja
+#  leer: sólo Gold, nunca Silver ni Bronze. Más las llaves mínimas para cuidar su propia cuenta
+#  (cambiar su contraseña y configurar su MFA).
+# =================================================================================================
+
+variable "consultant_users" {
+  description = "Personas que sólo consultan tablas de Gold (Athena / Power BI) asumiendo el rol de analista"
+  type        = list(string)
+  default     = ["consultor-joony"]
+}
+
+variable "analyst_role_name" {
+  description = "Rol de consulta creado por infra/platform (Lake Formation: sólo Gold)"
+  type        = string
+  default     = "paylake-dev-analyst"
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+}
+
+resource "aws_iam_group" "consultants" {
+  name = "paylake-consultores"
+  path = "/paylake/"
+}
+
+resource "aws_iam_group_policy" "consultants" {
+  name  = "solo-consultar-gold"
+  group = aws_iam_group.consultants.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "PonerseElRolDeAnalista"
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/${var.analyst_role_name}"
+      },
+      {
+        # Sólo sobre su propio usuario (${aws:username}): cambiar su contraseña y gestionar su MFA
+        Sid    = "CuidarSuPropiaCuenta"
+        Effect = "Allow"
+        Action = [
+          "iam:GetUser", "iam:ChangePassword", "iam:GetLoginProfile",
+          "iam:ListMFADevices", "iam:EnableMFADevice", "iam:ResyncMFADevice", "iam:DeactivateMFADevice",
+        ]
+        Resource = "arn:aws:iam::${local.account_id}:user/paylake/$${aws:username}"
+      },
+      {
+        Sid      = "CrearSuPropioMfaVirtual"
+        Effect   = "Allow"
+        Action   = ["iam:CreateVirtualMFADevice", "iam:DeleteVirtualMFADevice"]
+        Resource = "arn:aws:iam::${local.account_id}:mfa/$${aws:username}"
+      },
+      {
+        Sid      = "LeerPoliticaDeContrasenas"
+        Effect   = "Allow"
+        Action   = ["iam:GetAccountPasswordPolicy", "iam:ListVirtualMFADevices"]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_user" "consultant" {
+  for_each      = toset(var.consultant_users)
+  name          = each.value
+  path          = "/paylake/"
+  force_destroy = true # la contraseña de consola la crea el CLI (cloudshell_consultor.sh), fuera del tfstate
+}
+
+resource "aws_iam_user_group_membership" "consultant" {
+  for_each = aws_iam_user.consultant
+  user     = each.value.name
+  groups   = [aws_iam_group.consultants.name]
+}
+
+output "consultant_user_arns" {
+  value = { for k, u in aws_iam_user.consultant : k => u.arn }
+}
+
+output "consultant_switch_role_url" {
+  description = "Enlace para que el consultor, ya con sesión iniciada, se ponga el rol de analista en la consola"
+  value       = "https://signin.aws.amazon.com/switchrole?account=${local.account_id}&roleName=${var.analyst_role_name}&displayName=Analista%20Gold"
+}
