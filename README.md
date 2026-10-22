@@ -54,6 +54,8 @@ Los 10 problemas que aparecieron al desplegar por primera vez, con su causa y su
 
 ## Arquitectura
 
+Diagrama editable en draw.io: [`docs/img/arquitectura.drawio`](docs/img/arquitectura.drawio) (abrir en [app.diagrams.net](https://app.diagrams.net) → *Abrir desde → Este dispositivo*).
+
 ```mermaid
 flowchart LR
   subgraph Fuentes
