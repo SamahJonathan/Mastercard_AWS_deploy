@@ -38,7 +38,8 @@ echo "==> Espacio disponible: $(df -h /tmp | awk 'NR==2 {print $4}') en /tmp, $(
 
 echo "==> Terraform: grupo paylake-admins + usuario $USER_NAME"
 terraform -chdir="$ROOT/infra/account" init -input=false
-terraform -chdir="$ROOT/infra/account" apply -var="admin_users=[\"$USER_NAME\"]"
+# La lista de administradores vive sólo en infra/account/main.tf (admin_users); pasarla con -var la reemplazaría
+terraform -chdir="$ROOT/infra/account" apply
 
 echo "==> Access key (CLI, fuera de Terraform)"
 EXISTING=$(aws iam list-access-keys --user-name "$USER_NAME" --query 'length(AccessKeyMetadata)' --output text)

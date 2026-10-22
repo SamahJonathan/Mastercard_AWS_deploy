@@ -85,6 +85,8 @@ output "admin_user_arns" {
 #  (cambiar su contraseña y configurar su MFA).
 # =================================================================================================
 
+# Para dar acceso a otra persona, se agrega aquí (se le entrega el llavero); para quitarlo, se borra.
+# Es el ÚNICO lugar donde está esta lista: los scripts de CloudShell no la reemplazan.
 variable "consultant_users" {
   description = "Personas que sólo consultan tablas de Gold (Athena / Power BI) asumiendo el rol de analista"
   type        = list(string)

@@ -43,6 +43,15 @@ El consultor no tiene ningún permiso sobre datos por sí mismo: entra a la cons
 (*Switch role*) al de analista, y desde ahí consulta. Si alguien obtiene su contraseña, lo más que puede hacer es
 leer Gold, que son datos agregados sin números de tarjeta.
 
+**Sumar a otra persona = entregarle el mismo llavero.** No se le dan llaves sueltas:
+
+1. Agregar su nombre a `consultant_users` en [`infra/account/main.tf`](../infra/account/main.tf) (único lugar de la lista) y hacer push.
+2. En CloudShell: `cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh <nuevo-usuario>`.
+   El plan debe decir `2 to add` (usuario + membresía) y **`0 to destroy`**.
+3. `./infra/command/check_iam.ps1` comprueba a todos los miembros del grupo.
+
+Quitar el acceso es lo inverso: borrar el nombre de la lista y aplicar. Las llaves siguen en el llavero para los demás.
+
 Se crea con `bash infra/command/cloudshell_consultor.sh` en la **misma carpeta de CloudShell** donde se corrió
 `cloudshell_admin.sh` (ahí vive el `terraform.tfstate` de `infra/account`). La contraseña de consola la crea el CLI,
 es temporal y debe cambiarse al primer ingreso.

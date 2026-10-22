@@ -2,7 +2,10 @@
 # Crea el usuario consultor (sólo consulta Gold asumiendo el rol de analista). Se ejecuta en AWS CloudShell,
 # en la MISMA carpeta donde se corrió cloudshell_admin.sh: ahí vive el terraform.tfstate de infra/account.
 #
-#   cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh
+#   cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh [usuario]
+#
+# Para sumar a otra persona: agregar su nombre a consultant_users en infra/account/main.tf, push,
+# y aquí: git pull && bash infra/command/cloudshell_consultor.sh <nuevo-usuario>
 #
 # 1. Aplica infra/account: grupo paylake-consultores + usuario consultor-joony (Terraform).
 # 2. Crea su contraseña de consola con el CLI (fuera del tfstate), de un solo uso: debe cambiarla al entrar.
@@ -26,9 +29,16 @@ if ! command -v terraform >/dev/null; then
   exit 1
 fi
 
-echo "==> Terraform: grupo paylake-consultores + usuario $USER_NAME"
+# La lista de consultores vive SÓLO en infra/account/main.tf (variable consultant_users). No se pasa con -var:
+# reemplazaría la lista completa y Terraform borraría a los consultores que no estén en ella.
+if ! grep -q "\"$USER_NAME\"" "$ROOT/infra/account/main.tf"; then
+  echo "$USER_NAME no está en consultant_users de infra/account/main.tf: agrégalo ahí, haz push y git pull aquí."
+  exit 1
+fi
+
+echo "==> Terraform: grupo paylake-consultores + usuarios de consultant_users"
 terraform -chdir="$ROOT/infra/account" init -input=false
-terraform -chdir="$ROOT/infra/account" apply -var="consultant_users=[\"$USER_NAME\"]"
+terraform -chdir="$ROOT/infra/account" apply
 
 echo "==> Contraseña de consola (CLI, fuera de Terraform)"
 if aws iam get-login-profile --user-name "$USER_NAME" >/dev/null 2>&1; then

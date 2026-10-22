@@ -60,16 +60,17 @@ $checks = @(
     @{ id = "paylake-github-deploy"; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea usuarios ni access keys" }
 )
 
-# Consultor (infra/account): sólo si ya existe. Su única llave es ponerse el rol de analista.
-$consultant = "consultor-joony"
-$consultantArn = aws iam get-user --user-name $consultant --query User.Arn --output text 2>$null
-if ($LASTEXITCODE -eq 0 -and $consultantArn) {
+# Consultores (infra/account): cada miembro del grupo paylake-consultores. Su única llave es el rol de analista.
+$members = aws iam get-group --group-name paylake-consultores --query "Users[].[UserName,Arn]" --output json 2>$null | ConvertFrom-Json
+foreach ($m in @($members)) {
+    if (-not $m) { continue }
+    $u, $uArn = $m[0], $m[1]
     $checks += @(
-        @{ arn = $consultantArn; id = $consultant; action = "sts:AssumeRole"; res = (Role "$name-analyst"); expect = "allowed"; why = "se pone el rol de analista (Gold)" }
-        @{ arn = $consultantArn; id = $consultant; action = "sts:AssumeRole"; res = (Role "$name-risk-analyst"); expect = "implicitDeny"; why = "no puede ponerse el de riesgo (Silver)" }
-        @{ arn = $consultantArn; id = $consultant; action = "athena:StartQueryExecution"; res = "*"; expect = "implicitDeny"; why = "sin el rol no consulta nada" }
-        @{ arn = $consultantArn; id = $consultant; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "no lee archivos directo" }
-        @{ arn = $consultantArn; id = $consultant; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea identidades" }
+        @{ arn = $uArn; id = $u; action = "sts:AssumeRole"; res = (Role "$name-analyst"); expect = "allowed"; why = "se pone el rol de analista (Gold)" }
+        @{ arn = $uArn; id = $u; action = "sts:AssumeRole"; res = (Role "$name-risk-analyst"); expect = "implicitDeny"; why = "no puede ponerse el de riesgo (Silver)" }
+        @{ arn = $uArn; id = $u; action = "athena:StartQueryExecution"; res = "*"; expect = "implicitDeny"; why = "sin el rol no consulta nada" }
+        @{ arn = $uArn; id = $u; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "no lee archivos directo" }
+        @{ arn = $uArn; id = $u; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea identidades" }
     )
 }
 
