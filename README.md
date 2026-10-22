@@ -1,8 +1,21 @@
 # Payments Lakehouse en AWS · Bronze / Silver / Gold
 
-Plataforma de datos que **ingiere, depura, gobierna e intercambia** transacciones de pago con tarjeta en AWS,
-siguiendo la arquitectura medallion. Todo es **infraestructura como código** (Terraform + CloudFormation),
-con **IAM de mínimo privilegio** y **CI/CD en GitHub Actions vía OIDC** (sin access keys).
+![Arquitectura de datos end-to-end del Payments Lakehouse en AWS](docs/img/arquitectura.png)
+
+Plataforma de datos de punta a punta para una **red de pagos con tarjeta**. Recibe transacciones de dos fuentes
+(autorizaciones de los adquirentes y un core bancario en PostgreSQL replicado con **AWS DMS**), las ordena en tres
+capas sobre S3 siguiendo la arquitectura medallion y las entrega listas para el negocio:
+
+- **Bronze** guarda el dato tal como llegó, cifrado e inmutable.
+- **Silver** lo limpia, valida y deduplica, manda a cuarentena lo que no cumple las reglas y **tokeniza el número de
+  tarjeta**: ningún analista ve un PAN.
+- **Gold** produce los productos de datos: KPIs por comercio, la **liquidación de intercambio** entre bancos y
+  **alertas de fraude** con la precisión de cada regla medida contra fraudes confirmados.
+
+Se consume con **Athena** (SQL), un dashboard de **Power BI**, una **API REST** y archivos de liquidación que cada banco
+emisor descarga de su propia carpeta. Todo es **infraestructura como código** (Terraform + CloudFormation), con
+**IAM de mínimo privilegio**, gobierno de datos con **Lake Formation** y **CI/CD en GitHub Actions vía OIDC** (sin
+access keys). Está **desplegado y verificado en una cuenta real de AWS** (ver [Verificado en AWS](#verificado-en-aws)).
 
 > ⚠️ Todos los datos son **sintéticos**: bancos, comercios, tarjetas, tipos de cambio y tasas de intercambio son inventados.
 
