@@ -90,7 +90,7 @@ output "admin_user_arns" {
 variable "consultant_users" {
   description = "Personas que sólo consultan tablas de Gold (Athena / Power BI) asumiendo el rol de analista"
   type        = list(string)
-  default     = ["consultor-joony"]
+  default     = ["consultor-joony", "consultor-juan", "consultor-maria"]
 }
 
 variable "analyst_role_name" {
