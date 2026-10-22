@@ -60,8 +60,9 @@ fi
 
 echo "==> Terraform: grupo paylake-admins + usuario $USER_NAME"
 terraform -chdir="$ROOT/infra/account" init -input=false "${BACKEND_ARGS[@]}"
-# La lista de administradores vive sólo en infra/account/main.tf (admin_users); pasarla con -var la reemplazaría
-terraform -chdir="$ROOT/infra/account" apply
+# La lista de administradores vive sólo en infra/account/main.tf (admin_users); pasarla con -var la reemplazaría.
+# Etapa 0: sólo el administrador. Los consultores necesitan la plataforma (Lake Formation): van después con account.ps1.
+terraform -chdir="$ROOT/infra/account" apply   -target=aws_iam_group.admins -target=aws_iam_group_policy_attachment.admins   -target=aws_iam_user.admin -target=aws_iam_user_group_membership.admin
 
 echo "==> Access key (CLI, fuera de Terraform)"
 EXISTING=$(aws iam list-access-keys --user-name "$USER_NAME" --query 'length(AccessKeyMetadata)' --output text)

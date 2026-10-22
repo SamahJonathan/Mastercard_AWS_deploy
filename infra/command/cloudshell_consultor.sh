@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Crea consultores (sólo consultan Gold asumiendo el rol de analista) desde AWS CloudShell.
+# Crea consultores (consultan sólo Gold, directo en Athena) desde AWS CloudShell.
 # Desde la PC, lo equivalente es: ./infra/command/account.ps1  (mismo Terraform, mismo estado en S3).
 #
 #   cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh [usuario]
@@ -74,8 +74,7 @@ else
   Usuario       : ${USER_NAME}
   Contraseña    : ${PASSWORD}
 
-  Después de entrar, ponerse el rol de analista:
-  $(terraform -chdir="$ROOT/infra/account" output -raw consultant_switch_role_url)
+  Al entrar consulta directo en Athena: workgroup paylake-dev-analytics, base paylake_dev_gold.
 =====================================================================
   No pegues la contraseña en chats. Limpia la pantalla con: clear
 EOF

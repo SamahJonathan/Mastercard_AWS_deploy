@@ -60,16 +60,20 @@ $checks = @(
     @{ id = "paylake-github-deploy"; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea usuarios ni access keys" }
 )
 
-# Consultores (infra/account): cada miembro del grupo paylake-consultores. Su única llave es el rol de analista.
+# Consultores (infra/account): cada miembro de paylake-consultores consulta Gold directo y nada más.
+$workgroup = "arn:aws:athena:sa-east-1:${account}:workgroup/$name-analytics"
+$goldTable = "arn:aws:glue:sa-east-1:${account}:table/paylake_dev_gold/interchange_settlement"
+$silverTable = "arn:aws:glue:sa-east-1:${account}:table/paylake_dev_silver/transactions"
 $members = aws iam get-group --group-name paylake-consultores --query "Users[].[UserName,Arn]" --output json 2>$null | ConvertFrom-Json
 foreach ($m in @($members)) {
     if (-not $m) { continue }
     $u, $uArn = $m[0], $m[1]
     $checks += @(
-        @{ arn = $uArn; id = $u; action = "sts:AssumeRole"; res = (Role "$name-analyst"); expect = "allowed"; why = "se pone el rol de analista (Gold)" }
-        @{ arn = $uArn; id = $u; action = "sts:AssumeRole"; res = (Role "$name-risk-analyst"); expect = "implicitDeny"; why = "no puede ponerse el de riesgo (Silver)" }
-        @{ arn = $uArn; id = $u; action = "athena:StartQueryExecution"; res = "*"; expect = "implicitDeny"; why = "sin el rol no consulta nada" }
-        @{ arn = $uArn; id = $u; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "no lee archivos directo" }
+        @{ arn = $uArn; id = $u; action = "athena:StartQueryExecution"; res = $workgroup; expect = "allowed"; why = "consulta directo en el workgroup" }
+        @{ arn = $uArn; id = $u; action = "glue:GetTable"; res = $goldTable; expect = "allowed"; why = "ve las tablas de Gold" }
+        @{ arn = $uArn; id = $u; action = "glue:GetTable"; res = $silverTable; expect = "implicitDeny"; why = "Silver ni siquiera aparece" }
+        @{ arn = $uArn; id = $u; action = "s3:GetObject"; res = (S3 gold "x"); expect = "implicitDeny"; why = "los datos sólo llegan vía Lake Formation" }
+        @{ arn = $uArn; id = $u; action = "sts:AssumeRole"; res = (Role "$name-analyst"); expect = "implicitDeny"; why = "ya no necesita cambiar de rol" }
         @{ arn = $uArn; id = $u; action = "iam:CreateUser"; res = "*"; expect = "implicitDeny"; why = "no crea identidades" }
     )
 }

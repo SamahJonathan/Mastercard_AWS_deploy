@@ -67,4 +67,4 @@ if ($created) {
     Write-Host "Guardadas en logs/credenciales-consultores.txt (no se muestran aquí; entrégalas por un canal privado)."
 }
 Write-Host "URL de acceso : https://$account.signin.aws.amazon.com/console"
-Write-Host "Cambiar de rol: https://signin.aws.amazon.com/switchrole?account=$account&roleName=paylake-dev-analyst&displayName=Analista%20Gold"
+Write-Host "Al entrar consultan directo en Athena: workgroup paylake-dev-analytics, base paylake_dev_gold (sólo Gold)."

@@ -84,33 +84,40 @@ output "admin_user_arns" {
 }
 
 # =================================================================================================
-#  Consultores: sólo consultan tablas. Una identidad por propósito: el administrador despliega,
-#  el consultor consulta.
+#  Consultores: sólo consultan tablas de Gold. Una identidad por propósito: el administrador
+#  despliega, el consultor consulta.
 #
-#  El consultor NO recibe permisos sobre datos. Su única llave es ponerse el rol de analista
-#  (paylake-dev-analyst, definido en infra/platform/iam.tf), y es ese rol el que Lake Formation deja
-#  leer: sólo Gold, nunca Silver ni Bronze. Más las llaves mínimas para cuidar su propia cuenta
-#  (cambiar su contraseña y configurar su MFA).
+#  Agregar un nombre a consultant_users y ejecutar infra/command/account.ps1 deja a la persona lista
+#  para consultar DIRECTO (sin cambiar de rol):
+#    - IAM (llavero paylake-consultores): Athena en el workgroup del proyecto, catálogo sólo de Gold,
+#      resultados en su bucket, la llave KMS del lake y cuidar su propia cuenta (contraseña y MFA).
+#    - Lake Formation (por persona, porque LF no acepta grupos de IAM): SELECT sobre las tablas con
+#      layer = gold. Silver y Bronze no existen para el consultor.
+#  Requiere la plataforma desplegada (workgroup, llave KMS y LF-Tags los crea infra/platform).
 # =================================================================================================
 
 # Para dar acceso a otra persona, se agrega aquí (se le entrega el llavero); para quitarlo, se borra.
-# Es el ÚNICO lugar donde está esta lista: los scripts de CloudShell no la reemplazan.
+# Es el ÚNICO lugar donde está esta lista: los scripts no la reemplazan.
 variable "consultant_users" {
-  description = "Personas que sólo consultan tablas de Gold (Athena / Power BI) asumiendo el rol de analista"
+  description = "Personas que sólo consultan tablas de Gold (Athena / Power BI)"
   type        = list(string)
   default     = ["consultor-joony", "consultor-juan", "consultor-maria"]
 }
 
-variable "analyst_role_name" {
-  description = "Rol de consulta creado por infra/platform (Lake Formation: sólo Gold)"
+variable "platform_name" {
+  description = "Prefijo de los recursos de infra/platform (project-environment)"
   type        = string
-  default     = "paylake-dev-analyst"
+  default     = "paylake-dev"
 }
 
 data "aws_caller_identity" "current" {}
 
 locals {
-  account_id = data.aws_caller_identity.current.account_id
+  account_id   = data.aws_caller_identity.current.account_id
+  gold_db      = "${replace(var.platform_name, "-", "_")}_gold"
+  workgroup    = "arn:aws:athena:${var.region}:${local.account_id}:workgroup/${var.platform_name}-analytics"
+  results      = "arn:aws:s3:::${var.platform_name}-athena-results-${local.account_id}"
+  glue_catalog = "arn:aws:glue:${var.region}:${local.account_id}:catalog"
 }
 
 resource "aws_iam_group" "consultants" {
@@ -125,10 +132,56 @@ resource "aws_iam_group_policy" "consultants" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "PonerseElRolDeAnalista"
+        Sid    = "ConsultarEnElWorkgroupDelProyecto"
+        Effect = "Allow"
+        Action = [
+          "athena:StartQueryExecution", "athena:StopQueryExecution", "athena:GetQueryExecution",
+          "athena:GetQueryResults", "athena:GetQueryResultsStream", "athena:GetQueryRuntimeStatistics",
+          "athena:ListQueryExecutions", "athena:BatchGetQueryExecution", "athena:GetWorkGroup",
+          "athena:ListNamedQueries", "athena:GetNamedQuery", "athena:BatchGetNamedQuery",
+        ]
+        Resource = local.workgroup
+      },
+      {
+        # Las List* de nivel cuenta sólo admiten "*" (catálogos y workgroups disponibles)
+        Sid      = "VerCatalogosYWorkgroups"
         Effect   = "Allow"
-        Action   = "sts:AssumeRole"
-        Resource = "arn:aws:iam::${local.account_id}:role/${var.analyst_role_name}"
+        Action   = ["athena:ListWorkGroups", "athena:ListDataCatalogs", "athena:ListEngineVersions"]
+        Resource = "*"
+      },
+      {
+        Sid      = "MetadatosDeAthena"
+        Effect   = "Allow"
+        Action   = ["athena:GetDataCatalog", "athena:ListDatabases", "athena:GetDatabase", "athena:ListTableMetadata", "athena:GetTableMetadata"]
+        Resource = "arn:aws:athena:${var.region}:${local.account_id}:datacatalog/AwsDataCatalog"
+      },
+      {
+        # Catálogo sólo de Gold: Silver y Bronze ni siquiera aparecen
+        Sid      = "CatalogoSoloGold"
+        Effect   = "Allow"
+        Action   = ["glue:GetDatabase", "glue:GetDatabases", "glue:GetTable", "glue:GetTables", "glue:GetPartition", "glue:GetPartitions"]
+        Resource = [local.glue_catalog, "arn:aws:glue:${var.region}:${local.account_id}:database/${local.gold_db}", "arn:aws:glue:${var.region}:${local.account_id}:table/${local.gold_db}/*"]
+      },
+      {
+        # Sin s3:GetObject sobre Gold: Lake Formation entrega credenciales temporales por tabla concedida
+        Sid      = "DatosViaLakeFormation"
+        Effect   = "Allow"
+        Action   = "lakeformation:GetDataAccess"
+        Resource = "*"
+      },
+      {
+        Sid      = "ResultadosDeSusConsultas"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation", "s3:AbortMultipartUpload"]
+        Resource = [local.results, "${local.results}/*"]
+      },
+      {
+        # La llave del lake se identifica por su alias (el ARN lo genera la plataforma)
+        Sid       = "LlaveDelLake"
+        Effect    = "Allow"
+        Action    = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource  = "*"
+        Condition = { "ForAnyValue:StringEquals" = { "kms:ResourceAliases" = "alias/${var.platform_name}-lake" } }
       },
       {
         # Sólo sobre su propio usuario (${aws:username}): cambiar su contraseña y gestionar su MFA
@@ -160,7 +213,7 @@ resource "aws_iam_user" "consultant" {
   for_each      = toset(var.consultant_users)
   name          = each.value
   path          = "/paylake/"
-  force_destroy = true # la contraseña de consola la crea el CLI (cloudshell_consultor.sh), fuera del tfstate
+  force_destroy = true # la contraseña de consola la crea el CLI (account.ps1), fuera del tfstate
 }
 
 resource "aws_iam_user_group_membership" "consultant" {
@@ -169,11 +222,36 @@ resource "aws_iam_user_group_membership" "consultant" {
   groups   = [aws_iam_group.consultants.name]
 }
 
-output "consultant_user_arns" {
-  value = { for k, u in aws_iam_user.consultant : k => u.arn }
+# --- Lake Formation: qué tablas ve cada consultor (por etiqueta: hereda las tablas futuras de Gold) ---
+
+resource "aws_lakeformation_permissions" "consultant_databases" {
+  for_each    = toset(var.consultant_users)
+  principal   = aws_iam_user.consultant[each.key].arn
+  permissions = ["DESCRIBE"]
+
+  lf_tag_policy {
+    resource_type = "DATABASE"
+    expression {
+      key    = "layer"
+      values = ["gold"]
+    }
+  }
 }
 
-output "consultant_switch_role_url" {
-  description = "Enlace para que el consultor, ya con sesión iniciada, se ponga el rol de analista en la consola"
-  value       = "https://signin.aws.amazon.com/switchrole?account=${local.account_id}&roleName=${var.analyst_role_name}&displayName=Analista%20Gold"
+resource "aws_lakeformation_permissions" "consultant_tables" {
+  for_each    = toset(var.consultant_users)
+  principal   = aws_iam_user.consultant[each.key].arn
+  permissions = ["SELECT", "DESCRIBE"]
+
+  lf_tag_policy {
+    resource_type = "TABLE"
+    expression {
+      key    = "layer"
+      values = ["gold"]
+    }
+  }
+}
+
+output "consultant_user_arns" {
+  value = { for k, u in aws_iam_user.consultant : k => u.arn }
 }

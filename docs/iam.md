@@ -34,22 +34,36 @@ Paso a paso y problemas conocidos: [antes-de-desplegar.md](antes-de-desplegar.md
 
 ### Dos personas, dos identidades
 
-| Usuario | Grupo | Para qué | Permisos |
+| Usuario | Grupo (llavero) | Para qué | Permisos |
 |---|---|---|---|
-| `admin-joony` | `paylake-admins` | **desplegar y apagar** (`deploy.ps1`, `destroy.ps1`) | `AdministratorAccess`. Es el equivalente a `roles/owner`: se usa sólo para operar, con MFA |
-| `consultor-joony` | `paylake-consultores` | **consultar tablas** (Athena, Power BI) | una sola llave de datos: `sts:AssumeRole` sobre `paylake-dev-analyst`. Ese rol es el que Lake Formation deja leer: **sólo Gold**. Además puede cambiar su contraseña y gestionar su propio MFA |
+| `admin-joony` | `paylake-admins` | **desplegar y apagar** (`deploy.ps1`, `destroy.ps1`, `account.ps1`) | `AdministratorAccess`. Es el equivalente a `roles/owner`: se usa sólo para operar, con MFA |
+| `consultor-*` | `paylake-consultores` | **consultar tablas de Gold** en Athena, directo al entrar | las llaves del llavero (abajo) + un permiso de Lake Formation por persona |
 
-El consultor no tiene ningún permiso sobre datos por sí mismo: entra a la consola, **cambia de rol**
-(*Switch role*) al de analista, y desde ahí consulta. Si alguien obtiene su contraseña, lo más que puede hacer es
-leer Gold, que son datos agregados sin números de tarjeta.
+**Las llaves del llavero `paylake-consultores`** ([`infra/account/main.tf`](../infra/account/main.tf)):
+
+| Llave | Sobre qué | Lo que NO abre |
+|---|---|---|
+| consultar en Athena (`StartQueryExecution`, resultados, historial, consultas guardadas) | **sólo** el workgroup `paylake-dev-analytics` (tope de 1 GB por consulta) | otros workgroups |
+| ver catálogos y metadatos de Athena | el catálogo `AwsDataCatalog` | — |
+| leer el catálogo de Glue | **sólo** la base `paylake_dev_gold` y sus tablas | Silver y Bronze ni siquiera aparecen |
+| `lakeformation:GetDataAccess` | credenciales temporales por tabla concedida | **sin** `s3:GetObject` sobre los datos: no puede leer los Parquet a mano |
+| resultados de sus consultas | el bucket `athena-results` | los buckets de datos |
+| descifrar con la llave del lake | sólo la llave con alias `alias/paylake-dev-lake` | otras llaves KMS |
+| cuidar su propia cuenta | **su** usuario: contraseña y MFA | a otros usuarios; crear identidades |
+
+**El permiso de datos (Lake Formation), uno por persona:** `SELECT` + `DESCRIBE` sobre las tablas con
+`layer = gold`. Lake Formation no acepta grupos de IAM, así que Terraform lo crea para cada nombre de la lista
+(`for_each`). Como es por etiqueta, las tablas nuevas de Gold quedan disponibles solas.
 
 **Sumar a otra persona = entregarle el mismo llavero.** No se le dan llaves sueltas:
 
 1. Agregar su nombre a `consultant_users` en [`infra/account/main.tf`](../infra/account/main.tf) (único lugar de la lista).
-2. Desde la PC: `./infra/command/account.ps1`. El plan debe decir `2 to add` (usuario + membresía) y **`0 to destroy`**.
+2. Desde la PC: `./infra/command/account.ps1`. El plan debe decir `4 to add` (usuario, membresía y sus 2 permisos de
+   Lake Formation) y **`0 to destroy`**.
    Crea su contraseña temporal de consola y la guarda en `logs/credenciales-consultores.txt` (fuera de git, no se
    muestra en pantalla). Alternativa sin PC: `bash infra/command/cloudshell_consultor.sh <usuario>` en CloudShell.
-3. `./infra/command/check_iam.ps1` comprueba a **todos** los miembros del grupo (5 casos por persona).
+3. `./infra/command/check_iam.ps1` comprueba a **todos** los miembros del grupo (6 casos por persona: consulta
+   Gold, no ve Silver, no lee archivos, no asume el rol de analista, no crea identidades).
 4. Commit y push del cambio en `main.tf`: el repositorio queda como registro de quién tiene acceso.
 
 Quitar el acceso es lo inverso: borrar el nombre de la lista y aplicar (el plan muestra `to destroy` sólo de esa
