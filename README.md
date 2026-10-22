@@ -2,9 +2,17 @@
 
 ![Arquitectura de datos end-to-end del Payments Lakehouse en AWS](docs/img/arquitectura.png)
 
-Plataforma de datos de punta a punta para una **red de pagos con tarjeta**. Recibe transacciones de dos fuentes
-(autorizaciones de los adquirentes y un core bancario en PostgreSQL replicado con **AWS DMS**), las ordena en tres
-capas sobre S3 siguiendo la arquitectura medallion y las entrega listas para el negocio:
+Plataforma de datos de punta a punta para una **red de pagos con tarjeta**. Trabaja con dos fuentes de datos,
+ambas ficticias:
+
+1. **Una base de datos ficticia** ([`sample_data/mastercard_db_ficticia.json`](sample_data/mastercard_db_ficticia.json):
+   bancos emisores, comercios, tarjetas y 1.500 transacciones de septiembre). Se carga en un **PostgreSQL (RDS)** que
+   hace de "core bancario" y se replica a S3 con **AWS DMS**, que además captura cada cambio nuevo (**CDC**).
+2. **Un simulador en Python** ([`generator.py`](src/payments_lake/generator.py)) que imita los archivos de
+   autorizaciones que enviaría un adquirente, con errores de calidad y patrones de fraude inyectados a propósito
+   para poner a prueba el pipeline.
+
+Las ordena en tres capas sobre S3 siguiendo la arquitectura medallion y las entrega listas para el negocio:
 
 - **Bronze** guarda el dato tal como llegó, cifrado e inmutable.
 - **Silver** lo limpia, valida y deduplica, manda a cuarentena lo que no cumple las reglas y **tokeniza el número de
@@ -72,7 +80,7 @@ Diagrama editable en draw.io: [`docs/img/arquitectura.drawio`](docs/img/arquitec
 ```mermaid
 flowchart LR
   subgraph Fuentes
-    A[Adquirentes<br/>JSON lines con PAN]:::src
+    A[Simulador Python<br/>de adquirentes, con PAN]:::src
     subgraph VPC
       EC2[EC2 carga<br/>+ CDC simulado] --> RDS[(RDS PostgreSQL<br/>core bancario)]:::src
       DMS[AWS DMS<br/>full load + CDC]
