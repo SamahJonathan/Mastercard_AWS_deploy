@@ -45,16 +45,29 @@ leer Gold, que son datos agregados sin números de tarjeta.
 
 **Sumar a otra persona = entregarle el mismo llavero.** No se le dan llaves sueltas:
 
-1. Agregar su nombre a `consultant_users` en [`infra/account/main.tf`](../infra/account/main.tf) (único lugar de la lista) y hacer push.
-2. En CloudShell: `cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh <nuevo-usuario>`.
-   El plan debe decir `2 to add` (usuario + membresía) y **`0 to destroy`**.
-3. `./infra/command/check_iam.ps1` comprueba a todos los miembros del grupo.
+1. Agregar su nombre a `consultant_users` en [`infra/account/main.tf`](../infra/account/main.tf) (único lugar de la lista).
+2. Desde la PC: `./infra/command/account.ps1`. El plan debe decir `2 to add` (usuario + membresía) y **`0 to destroy`**.
+   Crea su contraseña temporal de consola y la guarda en `logs/credenciales-consultores.txt` (fuera de git, no se
+   muestra en pantalla). Alternativa sin PC: `bash infra/command/cloudshell_consultor.sh <usuario>` en CloudShell.
+3. `./infra/command/check_iam.ps1` comprueba a **todos** los miembros del grupo (5 casos por persona).
+4. Commit y push del cambio en `main.tf`: el repositorio queda como registro de quién tiene acceso.
 
-Quitar el acceso es lo inverso: borrar el nombre de la lista y aplicar. Las llaves siguen en el llavero para los demás.
+Quitar el acceso es lo inverso: borrar el nombre de la lista y aplicar (el plan muestra `to destroy` sólo de esa
+persona). Las llaves siguen en el llavero para los demás.
 
-Se crea con `bash infra/command/cloudshell_consultor.sh` en la **misma carpeta de CloudShell** donde se corrió
-`cloudshell_admin.sh` (ahí vive el `terraform.tfstate` de `infra/account`). La contraseña de consola la crea el CLI,
-es temporal y debe cambiarse al primer ingreso.
+### Dónde vive cada cosa
+
+| | PC | GitHub | AWS |
+|---|---|---|---|
+| **Quién tiene acceso** (listas de personas) | se edita en `infra/account/main.tf` | se versiona: cada alta/baja es un commit | grupos `paylake-admins` / `paylake-consultores` |
+| **Estado de Terraform** de las personas | — | — | `s3://paylake-tfstate-<cuenta>/account/terraform.tfstate` (mismo bucket que la plataforma) |
+| **Aplicar cambios de personas** | `account.ps1` (o CloudShell) | **no**: el CI sólo valida | — |
+| **Contraseñas temporales** | `logs/credenciales-consultores.txt`, fuera de git | nunca | perfil de login del usuario |
+| **Comprobación** | `check_iam.ps1` | — | simulador de políticas de IAM |
+
+GitHub Actions **no** crea personas a propósito: el rol de despliegue sólo puede crear roles de servicio con el
+boundary puesto, nunca usuarios ni access keys. Las identidades humanas las administra un administrador, con su
+propia credencial y MFA. Así un commit malicioso en el repositorio no puede regalarse acceso a la cuenta.
 
 ## Las dos preguntas
 

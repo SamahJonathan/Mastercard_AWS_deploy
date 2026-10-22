@@ -8,7 +8,8 @@ Comandos para operar la infraestructura desde tu máquina. Ejecutan **lo mismo**
 | Script | Cuándo | Qué hace |
 |---|---|---|
 | `cloudshell_admin.sh` | **Etapa 0, una vez**, en AWS CloudShell | Terraform ([`infra/account`](../account/main.tf)) crea el grupo `paylake-admins` y el usuario `admin-joony`; el CLI crea su access key (fuera del estado de Terraform) |
-| `cloudshell_consultor.sh` | Una vez, en la **misma carpeta** de CloudShell que `cloudshell_admin.sh` | Terraform crea el grupo `paylake-consultores` y el usuario `consultor-joony` (sólo puede asumir el rol de analista: Gold); el CLI crea su contraseña temporal de consola |
+| `account.ps1` | **Cada vez que das o quitas acceso a una persona** | Aplica `infra/account` (estado en S3) con plan y confirmación, y crea contraseñas temporales de consola para los consultores nuevos (guardadas en `logs/credenciales-consultores.txt`, no en pantalla). Ver [docs/iam.md](../../docs/iam.md#dos-personas-dos-identidades) |
+| `cloudshell_consultor.sh` | Lo mismo que `account.ps1`, desde AWS CloudShell | Mismo Terraform y mismo estado en S3 |
 | `preflight.ps1` | **Antes del primer despliegue** | Revisa sin crear nada lo que suele bloquear: AWS CLI, credenciales (no root), versión del layer de pandas en la región, roles de DMS u OIDC ya existentes, administradores previos de Lake Formation, sesión de GitHub |
 | `bootstrap.ps1` | **Una vez**, con credenciales de administrador | Despliega con **CloudFormation** el bucket del estado remoto, OIDC GitHub→AWS, el rol de despliegue y el permissions boundary; genera `backend.hcl` / `local.auto.tfvars` y configura las variables del repo en GitHub |
 | `deploy.ps1` / `deploy.sh` | **Cada vez que cambias algo** | Credenciales → tests → `terraform fmt` → `init` + `validate` → `plan` → `apply` (con confirmación) → opcional: ejecuta el pipeline y verifica `SUCCEEDED` |
@@ -29,3 +30,17 @@ git add -A; git commit -m "..."; git push
 ```
 
 Si PowerShell bloquea los scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+## Migrar el estado de la etapa 0 (sólo en una cuenta nueva)
+
+En una cuenta nueva, `cloudshell_admin.sh` corre **antes** de que exista el bucket del estado, así que guarda el
+estado de `infra/account` en CloudShell. Después del bootstrap, se pasa a S3 una sola vez, en la misma carpeta de
+CloudShell:
+
+```bash
+rm infra/account/backend_override.tf
+TF_DATA_DIR=/tmp/paylake-tf-account terraform -chdir=infra/account init -migrate-state   -backend-config="bucket=paylake-tfstate-<cuenta>" -backend-config="region=sa-east-1"
+```
+
+Desde ahí, `account.ps1` (PC) y `cloudshell_consultor.sh` (CloudShell) comparten el mismo estado.
+En la cuenta de este proyecto la migración se hizo importando lo existente (`terraform import`) desde la PC.

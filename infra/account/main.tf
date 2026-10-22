@@ -18,8 +18,16 @@ terraform {
       version = ">= 5.80, < 7.0"
     }
   }
-  # Estado local a propósito: esta etapa existe ANTES que el bucket del estado remoto (bootstrap).
-  # En CloudShell el directorio $HOME persiste entre sesiones.
+  # Estado en el mismo bucket que la plataforma (lo crea el bootstrap), así se administra desde la PC
+  # (infra/command/account.ps1) o desde CloudShell con el mismo estado. Configuración parcial: el bucket
+  # se pasa con -backend-config=../platform/backend.hcl.
+  # En una cuenta NUEVA el bucket aún no existe: cloudshell_admin.sh usa estado local con un archivo
+  # backend_override.tf y, después del bootstrap, se migra con `terraform init -migrate-state`.
+  backend "s3" {
+    key          = "account/terraform.tfstate"
+    use_lockfile = true
+    encrypt      = true
+  }
 }
 
 provider "aws" {
@@ -65,8 +73,8 @@ resource "aws_iam_user" "admin" {
 # Aditivo: agrega ESTE usuario a sus grupos, respetando otras membresías.
 # (aws_iam_group_membership sería exclusivo: dejaría en el grupo sólo a los que declara)
 resource "aws_iam_user_group_membership" "admin" {
-  for_each = aws_iam_user.admin
-  user     = each.value.name
+  for_each = toset(var.admin_users) # claves estáticas: conocidas antes de crear nada (import y primer plan)
+  user     = aws_iam_user.admin[each.key].name
   groups   = [aws_iam_group.admins.name]
 }
 
@@ -156,8 +164,8 @@ resource "aws_iam_user" "consultant" {
 }
 
 resource "aws_iam_user_group_membership" "consultant" {
-  for_each = aws_iam_user.consultant
-  user     = each.value.name
+  for_each = toset(var.consultant_users)
+  user     = aws_iam_user.consultant[each.key].name
   groups   = [aws_iam_group.consultants.name]
 }
 

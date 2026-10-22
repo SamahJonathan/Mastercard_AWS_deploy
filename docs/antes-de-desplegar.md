@@ -110,6 +110,13 @@ variables del repositorio en GitHub.
 **Confirmar la suscripción** en el email *AWS Notification - Subscription Confirmation*, si no las
 alarmas y el aviso de presupuesto no llegan.
 
+### 5b. Accesos de personas
+
+Después del bootstrap, el estado de `infra/account` (administradores y consultores) pasa a S3: ver
+[infra/command/README.md → Migrar el estado de la etapa 0](../infra/command/README.md#migrar-el-estado-de-la-etapa-0-sólo-en-una-cuenta-nueva).
+Desde ahí, dar o quitar acceso a una persona es editar la lista en `infra/account/main.tf` y ejecutar
+`./infra/command/account.ps1` ([docs/iam.md](iam.md#dos-personas-dos-identidades)).
+
 ## 6. Despliegue (Terraform)
 
 ```powershell
@@ -164,4 +171,5 @@ suscripción en *Manage QuickSight → Account settings*.
 | Job de Glue `FAILED`: *not authorized to perform glue:CreateDatabase* | con `saveAsTable`, Spark exige la base `default` del catálogo y trata de crearla | el job sólo escribe Parquet; las tablas las define Terraform con partition projection (`glue_job.tf`). El rol de Glue perdió los permisos de catálogo y de Lake Formation |
 | Athena: *Invalid reference to output of SELECT clause from grouping() expression in ORDER BY* | Trino no admite `grouping()` en el `ORDER BY` sobre columnas transformadas | el `ROLLUP` se calcula en una CTE y se ordena afuera (`sql/advanced/10_settlement_rollup.sql`) |
 | Power BI: *not authorized to perform athena:ListDataCatalogs* | el navegador de Power BI lista catálogos, bases y tablas con APIs de metadatos que una consulta directa no usa | el rol de analista recibe las acciones de metadatos de Athena (sólo lectura) |
+| Sumar consultores dependía de una carpeta concreta de CloudShell | el estado de `infra/account` vivía en el `$HOME` de CloudShell | estado movido a S3 (`account/terraform.tfstate`) e importado lo existente; `account.ps1` desde la PC. Los scripts de CloudShell usan el mismo estado y apartan cualquier estado local viejo |
 | Repositorio clonado dentro de sí mismo (`Mastercard_AWS_deploy/Mastercard_AWS_deploy`) | se ejecutó `git clone` estando ya dentro de la carpeta | partir siempre con `cd ~` (está en los comandos del paso 2) |

@@ -23,4 +23,6 @@ logs/
 *.tfstate.*
 tfplan
 tfplan-*
+*.tfplan
+*_override.tf
 infra/platform/.build/

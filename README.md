@@ -138,7 +138,7 @@ glue/jobs/              # job PySpark de Glue (Data Quality + Spark SQL)
 scripts/core_db/        # carga y CDC simulado del core bancario (PostgreSQL)
 sample_data/            # extracto core ficticio
 sql/ · sql/advanced/    # consultas Athena (se publican como Named Queries)
-infra/account/          # Terraform (etapa 0, desde CloudShell): grupo paylake-admins + usuario administrador
+infra/account/          # Terraform: personas y sus llaveros (paylake-admins, paylake-consultores); estado en S3
 infra/bootstrap/        # CloudFormation: estado remoto, OIDC GitHub, rol de despliegue, boundary
 infra/platform/         # Terraform: el lakehouse completo (iam.tf concentra todas las identidades)
 infra/command/          # comandos de cada actualización: bootstrap · deploy · check_iam · destroy

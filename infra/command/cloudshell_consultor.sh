@@ -1,31 +1,49 @@
 #!/usr/bin/env bash
-# Crea el usuario consultor (sólo consulta Gold asumiendo el rol de analista). Se ejecuta en AWS CloudShell,
-# en la MISMA carpeta donde se corrió cloudshell_admin.sh: ahí vive el terraform.tfstate de infra/account.
+# Crea consultores (sólo consultan Gold asumiendo el rol de analista) desde AWS CloudShell.
+# Desde la PC, lo equivalente es: ./infra/command/account.ps1  (mismo Terraform, mismo estado en S3).
 #
 #   cd ~/Mastercard_AWS_deploy && git pull && bash infra/command/cloudshell_consultor.sh [usuario]
 #
 # Para sumar a otra persona: agregar su nombre a consultant_users en infra/account/main.tf, push,
 # y aquí: git pull && bash infra/command/cloudshell_consultor.sh <nuevo-usuario>
 #
-# 1. Aplica infra/account: grupo paylake-consultores + usuario consultor-joony (Terraform).
+# 1. Aplica infra/account (Terraform, estado en S3).
 # 2. Crea su contraseña de consola con el CLI (fuera del tfstate), de un solo uso: debe cambiarla al entrar.
 set -euo pipefail
 
 USER_NAME="${1:-consultor-joony}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-STATE="$ROOT/infra/account/terraform.tfstate"
-
-if [ ! -f "$STATE" ]; then
-  echo "No encuentro $STATE."
-  echo "Este script debe correr en la misma carpeta de CloudShell donde se ejecutó cloudshell_admin.sh"
-  echo "(si se volvió a clonar el repo, el estado de la etapa 0 se perdió)."
-  exit 1
-fi
 
 # Los plugins de Terraform van a /tmp: CloudShell sólo da 1 GB persistente en $HOME
 export TF_DATA_DIR="/tmp/paylake-tf-account"
 if ! command -v terraform >/dev/null; then
   echo "Falta Terraform: ejecuta primero cloudshell_admin.sh, que lo instala"
+  exit 1
+fi
+
+# Estado de infra/account: en S3 (mismo bucket que la plataforma) si ya existe; en una cuenta nueva,
+# local hasta el bootstrap (después: infra/command/README.md, "Migrar el estado de la etapa 0").
+ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+STATE_BUCKET="paylake-tfstate-$ACCOUNT_ID"
+OVERRIDE="$ROOT/infra/account/backend_override.tf"
+if aws s3api head-bucket --bucket "$STATE_BUCKET" 2>/dev/null; then
+  rm -f "$OVERRIDE"
+  # Un estado local viejo nunca debe pisar al de S3: se aparta
+  if [ -f "$ROOT/infra/account/terraform.tfstate" ]; then
+    mv "$ROOT/infra/account/terraform.tfstate" "$ROOT/infra/account/terraform.tfstate.local-obsoleto"
+    echo "Estado local apartado (terraform.tfstate.local-obsoleto): se usa el de S3."
+  fi
+  BACKEND_ARGS=(-reconfigure -backend-config="bucket=$STATE_BUCKET" -backend-config="region=sa-east-1")
+else
+  printf 'terraform {
+  backend "local" {}
+}
+' > "$OVERRIDE"
+  BACKEND_ARGS=()
+  echo "Cuenta nueva: estado local en CloudShell hasta que el bootstrap cree $STATE_BUCKET."
+fi
+if [ ${#BACKEND_ARGS[@]} -eq 0 ]; then
+  echo "Primero el bootstrap: los consultores asumen un rol que crea la plataforma."
   exit 1
 fi
 
@@ -37,7 +55,7 @@ if ! grep -q "\"$USER_NAME\"" "$ROOT/infra/account/main.tf"; then
 fi
 
 echo "==> Terraform: grupo paylake-consultores + usuarios de consultant_users"
-terraform -chdir="$ROOT/infra/account" init -input=false
+terraform -chdir="$ROOT/infra/account" init -input=false "${BACKEND_ARGS[@]}"
 terraform -chdir="$ROOT/infra/account" apply
 
 echo "==> Contraseña de consola (CLI, fuera de Terraform)"
