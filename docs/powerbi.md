@@ -62,11 +62,14 @@ No hace falta iniciar sesión en Power BI para trabajar en Desktop; sólo para p
 Páginas opcionales: **Intercambio** (matriz `issuer_name` × `acquirer_id` con `Tasa efectiva`) y
 **Transfronterizo** (mapa por `merchant_country` con `Volumen transfronterizo USD`).
 
-## 5. Guardar como proyecto (versionable en git)
+## 5. El archivo del repositorio
 
-**Archivo → Guardar como → Tipo: Proyecto de Power BI (*.pbip)** → `powerbi/PaylakeDashboard.pbip`.
-El formato `.pbip` guarda el modelo y el informe como archivos de texto, así el dashboard queda en el
-repositorio igual que el resto del proyecto (el `.gitignore` que crea Power BI excluye la caché de datos).
+[`powerbi/Dashboard_lake.pbix`](../powerbi/Dashboard_lake.pbix) incluye una copia de los datos de Gold
+(sintéticos), así que **se abre y se ve con datos aunque no se tenga la conexión a Athena**. Para refrescarlo
+contra AWS hace falta el DSN del paso 1 (**Inicio → Actualizar**).
+
+Se eligió `.pbix` y no `.pbip` (proyecto en texto) a propósito: el `.pbip` excluye la caché de datos y quien lo
+abra sin acceso a la cuenta vería los gráficos vacíos.
 
 ## Alternativa sin DSN
 
