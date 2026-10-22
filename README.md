@@ -32,7 +32,7 @@ access keys). Está **desplegado y verificado en una cuenta real de AWS** (ver [
 | Requisito | Dónde se ve en el proyecto |
 |---|---|
 | **S3** | 7 buckets (una capa por bucket), KMS, versionado, ciclo de vida, TLS obligatorio — [`s3.tf`](infra/platform/s3.tf) |
-| **Glue** | Data Catalog (3 bases + partition projection), **job PySpark 5.0** con **Glue Data Quality** — [`glue_job.tf`](infra/platform/glue_job.tf), [`gold_card_analytics.py`](glue/jobs/gold_card_analytics.py) |
+| **Glue** | Data Catalog (3 bases + partition projection), **job PySpark 5.0** que calcula tablas de Gold (segmentos y tendencias) y antes valida **Silver** con **Glue Data Quality** — [`glue_job.tf`](infra/platform/glue_job.tf), [`gold_card_analytics.py`](glue/jobs/gold_card_analytics.py) |
 | **DMS** | Réplica **full load + CDC** de PostgreSQL (core bancario) a Bronze en Parquet — [`dms.tf`](infra/platform/dms.tf), adaptador en [`silver.py`](src/payments_lake/silver.py) |
 | **Athena** | Workgroup con tope de costo, 12 consultas guardadas — [`sql/`](sql/) |
 | **Lambda** | 4 funciones: ingesta, bronze→silver, silver→gold, API — [`handlers.py`](src/payments_lake/handlers.py) |
